@@ -70,113 +70,109 @@ def script =
 " network-object host 168.162.99.132"
 
 ]
-def objectGroups = [:]
-def parentObjects = [:]
-def acls = []
-def nats = []
+// --- STEP 1: Categorize blocks ---
+def objectGroups = [:]     // name -> lines (normal object groups)
+def parentObjects = [:]    // name -> lines (object-groups with group-objects)
+def acls = []              // list of ACL lines
+def nats = []              // list of NAT lines
 
 def current = []
 def currentName = null
 def isParent = false
-script.each{line->
-	line = line.trim()
 
-	if(line.startsWith("object-group")){
-		if(currentName){
-			if(isParent)
-				parentObjects[currentName] = current
-			else
-				objectGroups[currentName] = current
-		}
-		current = [line]
-		currentName = line.split("\\s+")[2] // Get the group name
-		isParent = false
-	}else if(line.startsWith("group-object")){
-		current << line
-		isParent = true
-	}else if(line.startsWith("access-list")){
-		current << line
-	}else{
-		if(current){
-			if(isParent)
-				parentObjects[currentName] = current
-			else
-				objectGroups[currentName] = current
-			current = []
-			currentName = null
-		}
-		if(line.startsWith("access-list")) acls << line
-		else if(line.startsWith("nat")) nats << line
-	}
+script.each { line ->
+    line = line.trim()
+
+    if (line.startsWith("object-group")) {
+        // Save previous block if exists
+        if (currentName) {
+            if (isParent) parentObjects[currentName] = current
+            else objectGroups[currentName] = current
+        }
+        // Start new block
+        current = [line]
+        currentName = line.split("\\s+")[2]
+        isParent = false
+
+    } else if (line.startsWith("group-object")) {
+        current << line
+        isParent = true
+
+    } else if (line.startsWith("network-object")) {
+        current << line
+
+    } else {
+        // End of object-group block
+        if (currentName) {
+            if (isParent) parentObjects[currentName] = current
+            else objectGroups[currentName] = current
+            current = []
+            currentName = null
+            isParent = false
+        }
+
+        if (line.startsWith("access-list")) acls << line
+        else if (line.startsWith("nat")) nats << line
+    }
 }
-// handle last block
-if(currentName){
-if(isParent)
-	parentObjects[currentName] = current
-else
-	objectGroups[currentName] = current
+// Handle last open block
+if (currentName) {
+    if (isParent) parentObjects[currentName] = current
+    else objectGroups[currentName] = current
 }
 
-// --- Now detect dependencies ---
+// --- STEP 2: Detect relationships ---
+def parentRefMap = [:]          // child -> parent
+def aclMap = [:].withDefault { [] } 
+def natMap = [:].withDefault { [] } 
+
+parentObjects.each { pname, plines ->
+    plines.each { l ->
+        if (l.startsWith("group-object")) {
+            def child = l.split("\\s+")[1]
+            parentRefMap[child] = pname
+        }
+    }
+}
+
+acls.each { l ->
+    def matches = (l =~ /object-group\s+(\S+)/)
+    matches.each { m -> aclMap[m[1]] << l }
+}
+
+nats.each { l ->
+    def matches = (l =~ /static\s+(\S+)/)
+    matches.each { m -> natMap[m[1]] << l }
+}
+
+// --- STEP 3: Identify fully deleted object groups ---
 def deletedGroups = [] as Set
-def parentRefMap = [:] //child -> Parent
-def aclMap = [:].withDefault{[]}
-def natMap = [:].withDefault{[]}
-
-parentObjects.each{pname, plines ->
-plines.each{l->
-	if(l.startsWith("group-object")){
-		def child = l.split("\\s+")[1]
-		parentRefMap[child] = pname
-	}
-}
-}
-acls.each{l->
-def matches = (l =~ /object-group\s+(\S+)/)
-matches.each{m->
-	aclMap[m[1]] << l
-}
+objectGroups.keySet().each { name ->
+    if (parentRefMap[name] || aclMap[name] || natMap[name]) {
+        deletedGroups << name
+    }
 }
 
-nats.each{l->
-def matches = (l =~ /static\s+(\S+)/)
-matches.each{m->
-	natMap[m[1]] << l
-}
-}
-
-// Find fully deleted groups
-objectGroups.keySet().each{name->
-if(parentRefMap[name] || aclMap[name] || natMap[name]){
-	deletedGroups << name
-}
-}
-
-print("\n======== PRE FINAL BACKOUT ========\n")
-print(objectGroups)
-print("\n======== PRE FINAL BACKOUT ========\n")
-
-// --- Build Output ---
+// --- STEP 4: Build final ordered script ---
 def output = []
 
-objectGroups.each{name, block ->
-if(!deletedGroups.contains(name)){
-	output += block
-}
-}
-
-
-objectGroups.each{name->
-if(objectGroups[name]) output += objectGroups[name]
-if(parentRefMap[name] && parentObjects[parentRefMap[name]])
-	output += parentObjects[parentRefMap[name]]
-if(aclMap[name]) output += aclMap[name]
-if(natMap[name]) output += natMap[name]
+// Step 1: Add all non-deleted object-groups first
+objectGroups.each { name, block ->
+    if (!deletedGroups.contains(name)) {
+        output += block
+    }
 }
 
-def preBackoutScript = output.join("\n")
+// Step 2: For deleted object-groups, maintain dependency sequence
+deletedGroups.each { name ->
+    if (objectGroups[name]) output += objectGroups[name]
+    if (parentRefMap[name] && parentObjects[parentRefMap[name]])
+        output += parentObjects[parentRefMap[name]]
+    if (aclMap[name]) output += aclMap[name]
+    if (natMap[name]) output += natMap[name]
+}
 
-print("\n======== FINAL BACKOUT ========\n")
-print(preBackoutScript)
-print("\n======== FINAL BACKOUT ========\n")
-
+// --- STEP 5: Print final script ---
+println "\n======== FINAL BACKOUT ========\n"
+println output.join("\n")
+println "\n==============================="
