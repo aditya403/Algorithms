@@ -172,3 +172,26 @@ installPlan.each { println it }
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"object network obj-10.236.122.68",
+"no host 10.236.122.68",
+"access-list PUB-VLAN-10.236.122.64 extended permit tcp object obj-10.236.122.68 object-group PUBLICIES_EXTERNAL eq 22999 log",
+"nat (PUB-VLAN-10.236.122.64/27,outside) source dynamic obj-10.236.122.68 interface destination static PUBLICIES_EXTERNAL PUBLICIES_EXTERNAL"
