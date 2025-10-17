@@ -339,3 +339,46 @@ installPlan.each { println it }
 			        }
 			        scriptStr += "##BackoutPlanEnd##\n\n"
 			    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"object-group network MCAFEE-AV-INTERNAL-SERVERS",
+" network-object host 10.238.67.18",
+" network-object host 168.162.99.130",
+" network-object host 10.238.67.19",
+" network-object host 168.162.99.132",
+"object-group network FIS-FIREEYE-ENCASE-BIT9-MCAFEE",
+" group-object MCAFEE-AV-INTERNAL-SERVERS",
+"access-list Outside-IN extended permit object-group ENCASE-MCAFEE-PORTS object-group MCAFEE-AV-INTERNAL-SERVERS object-group AvantGard_Servers_PHL_Inside log ",
+"access-list Inside-273_10.88.89.0/24-IN extended permit object HTTPS object VLAN273-10.88.89.0-24 object-group MCAFEE-AV-INTERNAL-SERVERS log ",
+"access-list Inside-273_10.88.89.0/24-IN extended permit object TCP-8080 object VLAN273-10.88.89.0-24 object-group MCAFEE-AV-INTERNAL-SERVERS log ",
+"access-list AVGD-LABS-VLAN530-10.110.4.0/24-IN extended permit object HTTPS object AVGD-LABS-VLAN530-10.110.4.0-24 object-group MCAFEE-AV-INTERNAL-SERVERS log ",
+"access-list AVGD-LABS-VLAN530-10.110.4.0/24-IN extended permit object TCP-8080 object AVGD-LABS-VLAN530-10.110.4.0-24 object-group MCAFEE-AV-INTERNAL-SERVERS log ",
+"nat (Outside,any) source static MCAFEE-AV-INTERNAL-SERVERS MCAFEE-AV-INTERNAL-SERVERS destination static AvantGard_Servers_PHL_Inside AvantGard_Servers_PHL_Inside",
+"object-group network FIREEYE-INTERNAL-SERVERS",
+" network-object host 168.162.99.132"
+						
