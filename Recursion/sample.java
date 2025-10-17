@@ -96,3 +96,79 @@ sho run object-group network | i object-group| ipAddr
  
 3) extract obj-grp to find out whether single input IP or mutiple.
 
+
+
+
+    def installPlan = []
+def objectPattern = ~/^object\s+network\s+([\w\-.]+)/
+def ipPattern = /\b\d{1,3}(\.\d{1,3}){3}\b/
+
+// Step 1: Identify object-network based entries
+def hasObjectNetwork = str.any { it.trim() ==~ /^object\s+network\s+.*/ }
+
+if (hasObjectNetwork) {
+    for (int i = 0; i < str.size(); i++) {
+        def line = str[i].trim()
+        def matcher = (line =~ objectPattern)
+
+        if (matcher.matches()) {
+            def objectName = matcher[0][1]
+            if (objectName == "") continue
+
+            // Case 1: Object name contains IP
+            if (objectName ==~ ipPattern) {
+                installPlan << line
+                if (i + 1 < str.size() && str[i + 1].trim().startsWith("host")) {
+                    installPlan << str[i + 1].trim()
+                }
+            } 
+            // Case 2: Word-based object name
+            else {
+                def cmdObjectName = "sh run | i ${objectName}"
+                println "\nExecuting command: ${cmdObjectName}"
+
+                def cmdObjectNameResult = execute.sendAndExpect(cmdObjectName, prompt, timeout, true)
+
+                // Now process the result like a config dump
+                cmdObjectNameResult.each { l ->
+                    if (l.contains("access-list") || l.contains("nat")) {
+                        installPlan << l.trim()
+                    }
+                }
+            }
+        }
+    }
+} else {
+    // Step 2: No object network found → detect IPs from ACL/NAT lines
+
+    str.each { line ->
+        if (line.contains("access-list") || line.contains("nat")) {
+            installPlan << line.trim()
+        }
+    }
+
+
+    // def ips = [] as Set
+    // str.each { line ->
+    //     def matcher = (line =~ ipRegex)
+    //     if (matcher.find()) {
+    //         ips << matcher.group()
+    //     }
+    // }
+
+    // ips.each { ip ->
+    //     str.each { l ->
+    //         if ((l.contains("access-list") || l.contains("nat")) && l.contains(ip)) {
+    //             installPlan << l.trim()
+    //         }
+    //     }
+    // }
+}
+
+// Step 3: Print Install Plan
+println "==== INSTALL PLAN ===="
+installPlan.each { println it }
+
+
+
+
