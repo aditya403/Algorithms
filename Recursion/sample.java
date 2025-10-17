@@ -195,3 +195,147 @@ installPlan.each { println it }
 "no host 10.236.122.68",
 "access-list PUB-VLAN-10.236.122.64 extended permit tcp object obj-10.236.122.68 object-group PUBLICIES_EXTERNAL eq 22999 log",
 "nat (PUB-VLAN-10.236.122.64/27,outside) source dynamic obj-10.236.122.68 interface destination static PUBLICIES_EXTERNAL PUBLICIES_EXTERNAL"
+
+
+
+
+
+    if(script.size() != 0){
+			        // def displayHost = deviceContextMap.containsKey(host) ? (host + " (" + deviceContextMap[host] + ")") : host;
+			        if(asaList.contains(host)) { displayHost = "ASA:" + displayHost }	
+			        
+			        // =========================================================DEVELOPMENT GONG ON=======================================
+			        // def objectGroups = [:]
+			        // def parentObjects = [:]
+			        // def acls = []
+			        // def nats = []
+			
+			        // def current = []
+			        // def currentName = null
+			        // def isParent = false
+			        
+			        detail += "\n===================RAW BACKOUT======================\n"
+			        script.each{i->
+			        	detail += i + "\n"
+			        }
+			        detail += "\n===================RAW BACKOUT======================\n"
+			
+			        // --- STEP 1: Categorize blocks ---
+					def objectGroups = [:]     // name -> lines (normal object groups)
+					def parentObjects = [:]    // name -> lines (object-groups with group-objects)
+					def acls = []              // list of ACL lines
+					def nats = []              // list of NAT lines
+					
+					def current = []
+					def currentName = null
+					def isParent = false
+					
+					script.each { line ->
+					    line = line.trim()
+					
+					    if (line.startsWith("object-group")) {
+					        // Save previous block if exists
+					        if (currentName) {
+					            if (isParent) parentObjects[currentName] = current
+					            else objectGroups[currentName] = current
+					        }
+					        // Start new block
+					        current = [line]
+					        currentName = line.split("\\s+")[2]
+					        isParent = false
+					
+					    } else if (line.startsWith("group-object")) {
+					        current << line
+					        isParent = true
+					
+					    } else if (line.startsWith("network-object")) {
+					        current << line
+					
+					    } else {
+					        // End of object-group block
+					        if (currentName) {
+					            if (isParent) parentObjects[currentName] = current
+					            else objectGroups[currentName] = current
+					            current = []
+					            currentName = null
+					            isParent = false
+					        }
+					
+					        if (line.startsWith("access-list")) acls << line
+					        else if (line.startsWith("nat")) nats << line
+					    }
+					}
+					// Handle last open block
+					if (currentName) {
+					    if (isParent) parentObjects[currentName] = current
+					    else objectGroups[currentName] = current
+					}
+					
+					// --- STEP 2: Detect relationships ---
+					def parentRefMap = [:]          // child -> parent
+					def aclMap = [:].withDefault { [] } 
+					def natMap = [:].withDefault { [] } 
+					
+					parentObjects.each { pname, plines ->
+					    plines.each { l ->
+					        if (l.startsWith("group-object")) {
+					            def child = l.split("\\s+")[1]
+					            parentRefMap[child] = pname
+					        }
+					    }
+					}
+					
+					acls.each { l ->
+					    def matches = (l =~ /object-group\s+(\S+)/)
+					    matches.each { m -> aclMap[m[1]] << l }
+					}
+					
+					nats.each { l ->
+					    def matches = (l =~ /static\s+(\S+)/)
+					    matches.each { m -> natMap[m[1]] << l }
+					}
+					
+					// --- STEP 3: Identify fully deleted object groups ---
+					def deletedGroups = [] as Set
+					objectGroups.keySet().each { name ->
+					    if (parentRefMap[name] || aclMap[name] || natMap[name]) {
+					        deletedGroups << name
+					    }
+					}
+					
+					// --- STEP 4: Build final ordered script ---
+					def output = []
+					
+					// Step 1: Add all non-deleted object-groups first
+					objectGroups.each { name, block ->
+					    if (!deletedGroups.contains(name)) {
+					        output += block
+					    }
+					}
+					
+					// Step 2: For deleted object-groups, maintain dependency sequence
+					deletedGroups.each { name ->
+					    if (objectGroups[name]) output += objectGroups[name]
+					    if (parentRefMap[name] && parentObjects[parentRefMap[name]])
+					        output += parentObjects[parentRefMap[name]]
+					    if (aclMap[name]) output += aclMap[name]
+					    if (natMap[name]) output += natMap[name]
+					}
+					
+					// --- STEP 5: Print final script ---
+					detail += "\n======== FINAL BACKOUT ========\n"
+					detail += output.join("\n")
+					detail += "\n======== FINAL BACKOUT ========\n"
+					
+					def preBackoutScript = output.join("\n")
+			        // =========================================================DEVELOPMENT GONG ON=======================================
+			
+			
+			        scriptStr += "##"+ displayHost + "##\n"
+			        scriptStr += "\n##BackoutPlanStart##\n"
+			        preBackoutScript.eachLine{it->
+			            scriptStr += it + "\n"
+			            scriptCheck += it + "\n"
+			        }
+			        scriptStr += "##BackoutPlanEnd##\n\n"
+			    }
