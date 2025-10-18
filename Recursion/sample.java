@@ -382,3 +382,155 @@ installPlan.each { println it }
 "object-group network FIREEYE-INTERNAL-SERVERS",
 " network-object host 168.162.99.132"
 						
+
+
+
+
+
+
+
+
+
+// --- STEP 1: Categorize blocks ---
+        def objectGroups = [:]      // name -> lines (normal object-groups)
+        def parentObjects = [:]     // name -> lines (object-groups with group-objects)
+        def networkObjects = [:]    // name -> lines (object network ...)
+        def acls = []               // list of ACL lines
+        def nats = []               // list of NAT lines
+
+        def current = []
+        def currentName = null
+        def isParent = false
+        def isNetworkObject = false
+
+        script.each { line ->
+            line = line.trim()
+
+            if (line.startsWith("object network")) {
+                // Save previous block if exists
+                if (currentName) {
+                    if (isParent) parentObjects[currentName] = current
+                    else if (isNetworkObject) networkObjects[currentName] = current
+                    else objectGroups[currentName] = current
+                }
+                // Start new network object
+                current = [line]
+                currentName = line.split("\\s+")[2]
+                isNetworkObject = true
+                isParent = false
+
+            } else if (line.startsWith("object-group")) {
+                // Save previous block if exists
+                if (currentName) {
+                    if (isParent) parentObjects[currentName] = current
+                    else if (isNetworkObject) networkObjects[currentName] = current
+                    else objectGroups[currentName] = current
+                }
+                // Start new object-group
+                current = [line]
+                currentName = line.split("\\s+")[2]
+                isParent = false
+                isNetworkObject = false
+
+            } else if (line.startsWith("group-object")) {
+                current << line
+                isParent = true
+
+            } else if (line.startsWith("network-object") || line.startsWith("host")) {
+                current << line
+
+            } else {
+                // End of block (any type)
+                if (currentName) {
+                    if (isParent) parentObjects[currentName] = current
+                    else if (isNetworkObject) networkObjects[currentName] = current
+                    else objectGroups[currentName] = current
+                    current = []
+                    currentName = null
+                    isParent = false
+                    isNetworkObject = false
+                }
+
+                if (line.startsWith("access-list")) acls << line
+                else if (line.startsWith("nat")) nats << line
+            }
+        }
+
+        // Handle last open block
+        if (currentName) {
+            if (isParent) parentObjects[currentName] = current
+            else if (isNetworkObject) networkObjects[currentName] = current
+            else objectGroups[currentName] = current
+        }
+
+        // --- STEP 2: Detect relationships ---
+        def parentRefMap = [:]          // child -> parent
+        def aclMap = [:].withDefault { [] }
+        def natMap = [:].withDefault { [] }
+
+        parentObjects.each { pname, plines ->
+            plines.each { l ->
+                if (l.trim().startsWith("group-object")) {
+                    def child = l.split("\\s+")[1]
+                    parentRefMap[child] = pname
+                }
+            }
+        }
+
+        acls.each { l ->
+            def matches = (l =~ /object-group\s+(\S+)/)
+            matches.each { m -> aclMap[m[1]] << l }
+        }
+
+        nats.each { l ->
+            def matches = (l =~ /static\s+(\S+)/)
+            matches.each { m -> natMap[m[1]] << l }
+        }
+
+        // --- STEP 3: Identify fully deleted object groups ---
+        def deletedGroups = [] as Set
+        objectGroups.keySet().each { name ->
+            if (parentRefMap[name] || aclMap[name] || natMap[name]) {
+                deletedGroups << name
+            }
+        }
+
+        // --- STEP 4: Build final ordered script ---
+        def output = []
+
+        // Step 1: Add all network objects first
+        networkObjects.each { name, block ->
+            output += block
+        }
+
+        // Step 2: Add all non-deleted object-groups
+        objectGroups.each { name, block ->
+            if (!deletedGroups.contains(name)) {
+                output += block
+            }
+        }
+
+        // Step 3: Add deleted object-groups + parents + ACL/NAT dependencies
+        deletedGroups.each { name ->
+            if (objectGroups[name]) output += objectGroups[name]
+            if (parentRefMap[name] && parentObjects[parentRefMap[name]])
+                output += parentObjects[parentRefMap[name]]
+            if (aclMap[name]) output += aclMap[name]
+            if (natMap[name]) output += natMap[name]
+        }
+
+        // Step 4: Add remaining ACLs not tied to deleted groups
+        def usedAcls = output.findAll { it.startsWith("access-list") } as Set
+        acls.findAll { !usedAcls.contains(it) }.each { output << it }
+
+        // Step 5: Add NATs last (not already included)
+        def usedNats = output.findAll { it.startsWith("nat") } as Set
+        nats.findAll { !usedNats.contains(it) }.each { output << it }
+
+        // --- STEP 5: Print final script ---
+        def detail = ""
+        detail += "\n======== FINAL BACKOUT ========\n"
+        detail += output.join("\n")
+        detail += "\n======== FINAL BACKOUT ========\n"
+
+        def preBackoutScript = output.join("\n")
