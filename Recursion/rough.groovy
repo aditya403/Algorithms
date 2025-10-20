@@ -1,8 +1,5 @@
 ////////////
 // VIP Decommission Automation Front Page (ExtJS)
-//
-// Mirrors the layout and structure of Troy Lee's Firewall Decomm page
-// Fields: VIP Name, Device Names, Backend Server, Route and Prefix List, Phase 1 Script
 ////////////
 
 document.body.innerHTML = "";
@@ -17,14 +14,16 @@ Ext.onReady(function() {
         margin: '15 30 15 15',
         border: false,
         html: [
+            '<div style="text-align: center">',
             '<img style="width:120px;height:60px" src="https://paymentweek.com/wp-content/uploads/2015/06/fis.png">',
-            '<p style="font-family: Helvetica; font-size: 18px">',
+            '<p style="font-family: Helvetica; font-size: 18px; font-weight: bold; margin-top: 10px;">',
             'VIP Decommission Automation',
             '</p>',
-            '<ul style="font-family: Helvetica; font-size: 12px">',
+            '<ul style="font-family: Helvetica; font-size: 12px; text-align: left; margin-left: 20px">',
             '<li>Fill out all fields and upload the Phase 1 script (.txt)</li>',
             '<li><a href="mailto:nss_automation@fisglobal.com">Contact us</a> with questions.</li>',
-            '</ul>'
+            '</ul>',
+            '</div>'
         ].join(' ')
     });
 
@@ -32,10 +31,10 @@ Ext.onReady(function() {
         return Ext.create('Ext.form.field.Text', {
             id: id,
             fieldLabel: label,
-            labelWidth: 150,
-            width: 450,
-            labelStyle: 'font-family: Helvetica; font-size: 12px;',
-            margin: '10 0 4 0'
+            labelWidth: 180,
+            width: 500,
+            labelStyle: 'font-family: Helvetica; font-size: 13px;',
+            margin: '10 0 8 0'
         });
     }
 
@@ -47,10 +46,10 @@ Ext.onReady(function() {
     var phase1FileInput = Ext.create('Ext.form.field.File', {
         id: 'phase1Script',
         fieldLabel: 'Phase 1 Script (.txt)',
-        labelWidth: 150,
-        width: 450,
-        labelStyle: 'font-family: Helvetica; font-size: 12px;',
-        margin: '10 0 4 0',
+        labelWidth: 180,
+        width: 500,
+        labelStyle: 'font-family: Helvetica; font-size: 13px;',
+        margin: '10 0 8 0',
         buttonText: 'Browse...'
     });
 
@@ -58,29 +57,35 @@ Ext.onReady(function() {
         id: 'fileDisplay',
         fieldLabel: 'Script Preview',
         labelAlign: 'top',
-        width: 450,
+        width: 500,
         height: 150,
         readOnly: true,
-        margin: '10 0 4 0'
+        margin: '10 0 10 0',
+        style: 'font-family: Courier New; font-size: 12px;'
     });
+
+    var uploadedFileContent = '';
 
     phase1FileInput.on('change', function(fileInput, value, eOpts) {
         var file = fileInput.fileInputEl.dom.files[0];
         if (file && file.name.endsWith('.txt')) {
             var reader = new FileReader();
             reader.onload = function(e) {
-                fileContentDisplay.setValue(e.target.result);
+                uploadedFileContent = e.target.result;
+                fileContentDisplay.setValue(uploadedFileContent);
             };
             reader.readAsText(file);
         } else {
+            uploadedFileContent = '';
             fileContentDisplay.setValue('Only .txt files are supported.');
         }
     });
 
     var runAutomationBtn = Ext.create('Ext.Button', {
         text: 'Run Automation',
-        width: 130,
-        style: 'background-color: #bcf1cb; color:black; border-color: #4cbb51',
+        width: 180,
+        style: 'background-color: #4caf50; color:white; border: none; font-weight: bold;',
+        margin: '10 0 10 0',
         handler: function() {
             var vipList = vipNameField.getValue().split(',').map(s => s.trim()).filter(s => s);
             if (vipList.length > 25) {
@@ -88,22 +93,44 @@ Ext.onReady(function() {
                 return;
             }
 
-            Ext.Msg.alert('Submitted', 'Automation triggered successfully. Data will be processed.');
-            console.log({
-                vipNames: vipList,
-                deviceNames: deviceNamesField.getValue(),
-                backendServers: backendServerField.getValue(),
-                routePrefix: routePrefixField.getValue(),
-                scriptText: fileContentDisplay.getValue()
+            var dataPayload = {
+                VIP_NAMES: vipNameField.getValue(),
+                DEVICE_NAMES: deviceNamesField.getValue(),
+                BACKEND_SERVERS: backendServerField.getValue(),
+                ROUTE_PREFIX_LIST: routePrefixField.getValue(),
+                PHASE1_SCRIPT: uploadedFileContent,
+                VERBOSE: true,
+                AJAXCALL: true,
+                WSDATA_FLAG: true
+            };
+
+            Ext.getBody().mask('Executing Automation...');
+
+            Ext.Ajax.request({
+                url: '/resolve/service/runbook/execute',
+                timeout: 1800000,
+                params: Object.assign({
+                    WIKI: 'CIO_NORA_NETWORK.LB_VIP_DECOM_PRE_REVIEW',
+                    USERID: '$wikiUser.getUsername()',
+                    PROBLEMID: 'NEW'
+                }, dataPayload),
+                success: function(response, opts) {
+                    Ext.getBody().unmask();
+                    Ext.Msg.alert('Success', 'Successfully executed runbook. Please check your email or status dashboard.');
+                },
+                failure: function(response, opts) {
+                    Ext.getBody().unmask();
+                    Ext.Msg.alert('Failure', 'Runbook execution failed. Please try again or contact support.');
+                }
             });
         }
     });
 
-    var topRight = Ext.create('Ext.panel.Panel', {
-        width: 540,
-        height: 340,
-        margin: 15,
+    var formPanel = Ext.create('Ext.panel.Panel', {
+        width: 550,
         layout: 'vbox',
+        padding: 20,
+        style: 'margin: 0 auto;',
         items: [
             vipNameField,
             deviceNamesField,
@@ -112,19 +139,26 @@ Ext.onReady(function() {
             phase1FileInput,
             fileContentDisplay,
             runAutomationBtn
-        ],
-        border: false
+        ]
     });
 
     var topPanel = Ext.create('Ext.panel.Panel', {
         xtype: 'panel',
-        region: 'north',
-        layout: 'hbox',
-        items: [topLeft, topRight]
+        layout: {
+            type: 'vbox',
+            align: 'center',
+            pack: 'center'
+        },
+        bodyPadding: 20,
+        items: [topLeft, formPanel]
     });
 
     Ext.create('Ext.container.Viewport', {
-        layout: 'fit',
+        layout: {
+            type: 'vbox',
+            align: 'center',
+            pack: 'center'
+        },
         items: [topPanel]
     });
 });
