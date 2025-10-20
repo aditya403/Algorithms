@@ -6,7 +6,7 @@ document.body.innerHTML = "";
 
 Ext.onReady(function() {
 
-    var sysidInc = 1;
+    var uploadedFileContent = '';
 
     var topLeft = Ext.create('Ext.panel.Panel', {
         width: 350,
@@ -53,18 +53,29 @@ Ext.onReady(function() {
         buttonText: 'Browse...'
     });
 
+    var deleteFileBtn = Ext.create('Ext.Button', {
+        text: 'Remove File',
+        hidden: true,
+        margin: '0 0 10 0',
+        handler: function() {
+            uploadedFileContent = '';
+            fileContentDisplay.setValue('');
+            phase1FileInput.reset();
+            deleteFileBtn.hide();
+        }
+    });
+
     var fileContentDisplay = Ext.create('Ext.form.field.TextArea', {
         id: 'fileDisplay',
         fieldLabel: 'Script Preview',
         labelAlign: 'top',
         width: 500,
-        height: 150,
+        height: 440,
         readOnly: true,
-        margin: '10 0 10 0',
-        style: 'font-family: Courier New; font-size: 12px;'
+        scrollable: true,
+        style: 'font-family: Courier New; font-size: 12px;',
+        margin: '10'
     });
-
-    var uploadedFileContent = '';
 
     phase1FileInput.on('change', function(fileInput, value, eOpts) {
         var file = fileInput.fileInputEl.dom.files[0];
@@ -73,11 +84,13 @@ Ext.onReady(function() {
             reader.onload = function(e) {
                 uploadedFileContent = e.target.result;
                 fileContentDisplay.setValue(uploadedFileContent);
+                deleteFileBtn.show();
             };
             reader.readAsText(file);
         } else {
             uploadedFileContent = '';
             fileContentDisplay.setValue('Only .txt files are supported.');
+            deleteFileBtn.hide();
         }
     });
 
@@ -126,39 +139,34 @@ Ext.onReady(function() {
         }
     });
 
-    var formPanel = Ext.create('Ext.panel.Panel', {
+    var leftPanel = Ext.create('Ext.panel.Panel', {
         width: 550,
         layout: 'vbox',
         padding: 20,
-        style: 'margin: 0 auto;',
         items: [
             vipNameField,
             deviceNamesField,
             backendServerField,
             routePrefixField,
             phase1FileInput,
-            fileContentDisplay,
+            deleteFileBtn,
             runAutomationBtn
         ]
     });
 
-    var topPanel = Ext.create('Ext.panel.Panel', {
+    var mainPanel = Ext.create('Ext.panel.Panel', {
         xtype: 'panel',
-        layout: {
-            type: 'vbox',
-            align: 'center',
-            pack: 'center'
-        },
+        layout: 'hbox',
         bodyPadding: 20,
-        items: [topLeft, formPanel]
+        items: [leftPanel, fileContentDisplay]
     });
 
     Ext.create('Ext.container.Viewport', {
         layout: {
             type: 'vbox',
             align: 'center',
-            pack: 'center'
+            pack: 'start'
         },
-        items: [topPanel]
+        items: [topLeft, mainPanel]
     });
 });
