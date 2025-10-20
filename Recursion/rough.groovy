@@ -9,17 +9,14 @@ Ext.onReady(function() {
     var uploadedFileContent = '';
 
     var topLeft = Ext.create('Ext.panel.Panel', {
-        width: 350,
-        height: 230,
-        margin: '15 30 15 15',
         border: false,
+        bodyPadding: 10,
         html: [
-            '<div style="text-align: center">',
-            '<img style="width:120px;height:60px" src="https://paymentweek.com/wp-content/uploads/2015/06/fis.png">',
-            '<p style="font-family: Helvetica; font-size: 18px; font-weight: bold; margin-top: 10px;">',
+            '<div style="text-align: center; margin-bottom: 10px">',
+            '<p style="font-family: Helvetica; font-size: 20px; font-weight: bold; margin: 0;">',
             'VIP Decommission Automation',
             '</p>',
-            '<ul style="font-family: Helvetica; font-size: 12px; text-align: left; margin-left: 20px">',
+            '<ul style="font-family: Helvetica; font-size: 12px; text-align: left; margin: 10px auto 0 auto; max-width: 600px;">',
             '<li>Fill out all fields and upload the Phase 1 script (.txt)</li>',
             '<li><a href="mailto:nss_automation@fisglobal.com">Contact us</a> with questions.</li>',
             '</ul>',
@@ -74,7 +71,8 @@ Ext.onReady(function() {
         readOnly: true,
         scrollable: true,
         style: 'font-family: Courier New; font-size: 12px;',
-        margin: '10'
+        margin: '10',
+        autoScroll: true
     });
 
     phase1FileInput.on('change', function(fileInput, value, eOpts) {
@@ -155,9 +153,9 @@ Ext.onReady(function() {
     });
 
     var mainPanel = Ext.create('Ext.panel.Panel', {
-        xtype: 'panel',
         layout: 'hbox',
-        bodyPadding: 20,
+        scrollable: true,
+        bodyPadding: 10,
         items: [leftPanel, fileContentDisplay]
     });
 
@@ -167,6 +165,7 @@ Ext.onReady(function() {
             align: 'center',
             pack: 'start'
         },
+        scrollable: true,
         items: [topLeft, mainPanel]
     });
 });
