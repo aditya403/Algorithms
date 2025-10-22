@@ -1,177 +1,251 @@
-////////////
-// VIP Decommission Automation Front Page (ExtJS)
-////////////
+import groovy.json.JsonOutput;
+import groovy.json.JsonSlurper;
 
-document.body.innerHTML = "";
+def condition = "good";
+def severity = "good";
+def summary = "";
+def detail = "";
 
-Ext.onReady(function() {
+// def prompt = INPUTS["RTR_PROMPT"] ?: "";
+def prompt = /[\#,\>]/;
+def vipName = assertInput("VIP_NAME");
 
-    var uploadedFileContent = '';
 
-    var topLeft = Ext.create('Ext.panel.Panel', {
-        border: false,
-        bodyPadding: 10,
-        html: [
-            '<div style="text-align: center; margin-bottom: 10px">',
-            '<p style="font-family: Helvetica; font-size: 20px; font-weight: bold; margin: 0;">',
-            'VIP Decommission Automation',
-            '</p>',
-            '<ul style="font-family: Helvetica; font-size: 12px; text-align: left; margin: 10px auto 0 auto; max-width: 600px;">',
-            '<li>Fill out all fields and upload the Phase 1 script (.txt)</li>',
-            '<li><a href="mailto:adityakumar.mishra@fisglobal.com?cc=Gil.Mendelaoui@fisglobal.com&subject=Question%20regarding%20LB%20VIP%20Decom">Contact us</a> with questions.</li>',
-            '</ul>',
-            '</div>'
-        ].join(' ')
-    });
+def timeout = INPUTS["TIMEOUT"] ?: 10;
+def finalVipState = ""
 
-    function createTextField(id, label) {
-        return Ext.create('Ext.form.field.Text', {
-            id: id,
-            fieldLabel: label,
-            labelWidth: 180,
-            width: 500,
-            labelStyle: 'font-family: Helvetica; font-size: 13px;',
-            margin: '10 0 8 0'
-        });
+try
+{
+	detail += SESSIONS.getClass()
+	def sessionId = assertInput("SESSION_ID");
+	def conn = sessionId ? SESSIONS.get(sessionId) : SESSIONS.get()
+	if(!conn)
+	{
+		throw new Exception("SESSION(connection) object was not found. $sessionId");
+	}
+
+	// Execute command
+	def execute = new ExecuteFW(conn);
+	
+	execute.sendAndExpect("bash", prompt, 5, true);
+	def cmd = "sh save | grep " + vipName
+	
+	timeout = timeout.toInteger();
+	def result = execute.sendAndExpect(cmd, prompt, timeout, true);
+	// detail += result
+	
+	result.eachLine{it->
+		if(it=~ /^add\slb/){
+			def matcher = it =~ /-state\s(?<state>(\w+))/
+			if(matcher.find()){
+				detail += it + "\n"
+				finalVipState += matcher.group("state")
+			}	
+		}
+	}
+	if(finalVipState == "DISABLED"){
+		condition = "bad"	
+	}
+	
+}
+catch(Exception e)
+{
+    condition = "bad";
+    severity = "critical";
+    summary = "Encountered exception: " + e.getMessage();
+    detail += "Encountered the following exception:";
+    detail += "\n" + e.toString();
+    for(line in e.getStackTrace())
+    {
+        detail += "\n\t" + line
     }
+}
 
-    var emailField = createTextField('userEmail', 'Your Email');
-    var ritmField = createTextField('ritmNumber', 'RITM Number');
-    var vipNameField = createTextField('vipNames', 'VIP Name(s) (comma-separated)');
-    var deviceNamesField = createTextField('deviceNames', 'Device Name(s)');
-    var backendServerField = createTextField('backendServers', 'Backend Server(s)');
-    var routePrefixField = createTextField('routePrefix', 'Route and Prefix List');
+def contentReturn = [:]
+contentReturn.condition = condition;
+contentReturn.severity = severity;
+contentReturn.summary = summary;
+contentReturn.detail = detail;
 
-    var phase1FileInput = Ext.create('Ext.form.field.File', {
-        id: 'phase1Script',
-        fieldLabel: 'Phase 1 Script (.txt)',
-        labelWidth: 180,
-        width: 500,
-        labelStyle: 'font-family: Helvetica; font-size: 13px;',
-        margin: '10 0 8 0',
-        buttonText: 'Browse...'
-    });
+contentReturn.finalVipState = finalVipState;
 
-    var deleteFileBtn = Ext.create('Ext.Button', {
-        text: 'Remove File',
-        hidden: true,
-        margin: '0 0 10 0',
-        handler: function() {
-            uploadedFileContent = '';
-            fileContentDisplay.setValue('');
-            phase1FileInput.reset();
-            deleteFileBtn.hide();
-        }
-    });
 
-    var fileContentDisplay = Ext.create('Ext.form.field.TextArea', {
-        id: 'fileDisplay',
-        fieldLabel: 'Script Preview',
-        labelAlign: 'top',
-        width: 500,
-        height: 440,
-        readOnly: true,
-        scrollable: true,
-        style: 'font-family: Courier New; font-size: 12px;',
-        margin: '10',
-        autoScroll: true
-    });
+INPUTS["CONTENT_RETURN"] = contentReturn;
 
-    phase1FileInput.on('change', function(fileInput, value, eOpts) {
-        var file = fileInput.fileInputEl.dom.files[0];
-        if (file && file.name.endsWith('.txt')) {
-            var reader = new FileReader();
-            reader.onload = function(e) {
-                uploadedFileContent = e.target.result;
-                fileContentDisplay.setValue(uploadedFileContent);
-                deleteFileBtn.show();
-            };
-            reader.readAsText(file);
-        } else {
-            uploadedFileContent = '';
-            fileContentDisplay.setValue('Only .txt files are supported.');
-            deleteFileBtn.hide();
-        }
-    });
 
-    var runAutomationBtn = Ext.create('Ext.Button', {
-        text: 'Run Automation',
-        width: 180,
-        style: 'background-color: #4caf50; color:white; border: none; font-weight: bold;',
-        margin: '10 0 10 0',
-        handler: function() {
-            var vipList = vipNameField.getValue().split(',').map(s => s.trim()).filter(s => s);
-            if (vipList.length > 25) {
-                Ext.Msg.alert('Validation Error', 'You can only enter up to 25 VIPs.');
-                return;
-            }
+def assertInput(inputsName)
+{
+    if(!INPUTS[inputsName]) throw new GroovyRuntimeException("Missing required input ${inputsName}");
+    return INPUTS[inputsName];
+}
 
-            var dataPayload = {
-                VIP_NAMES: vipNameField.getValue(),
-                DEVICE_NAMES: deviceNamesField.getValue(),
-                BACKEND_SERVERS: backendServerField.getValue(),
-                ROUTE_PREFIX_LIST: routePrefixField.getValue(),
-                PHASE1_SCRIPT: uploadedFileContent,
-                EMAIL: emailField.getValue(),
-                RITM: ritmField.getValue(),
-                VERBOSE: true,
-                AJAXCALL: true,
-                WSDATA_FLAG: true
-            };
+class ExecuteFW
+{
+	def conn;
+	def commandResponseLog = [:]
+	
+	public ExecuteFW(conn)
+	{		
+		this.conn = conn;
+	}
+	
+	public sendAndExpect(command, prompt, timeout)
+	{
+		return sendAndExpect(command, prompt, timeout, false);
+	}
+	
+	public sendAndExpect(command, prompt, timeout, ignoreErrorHandling)
+	{
+		// if you get null results, try setting ignoreErrorHandling to true
+		if(commandResponseLog.containsKey(command))
+		{
+			return commandResponseLog[command];
+		}
+		else
+		{		
+			conn.send(command);
+			Thread.sleep(100);
+			def result = conn.expect(prompt,timeout);
+			if(!ignoreErrorHandling)
+			{
+				def whileLoopCount = 0;
+				while(!(result ==~ /(?s).*>\s*$/) && whileLoopCount < 20)
+				{				
+					whileLoopCount++
+					result += conn.expect(prompt,timeout);
+				}
+				
+				if(result.count('>') > 1)
+				{
+					result = result.find(/(?ms).+(>.+>$)/)
+				}
+			}
+			commandResponseLog[command] = result;			
+			return result;
+		}
+	}
+	
+	public getCommandResponseLog()
+	{
+		return commandResponseLog;	
+	}	
+}
+class ExecuteFW2
+{
+	def conn;
+	def commandCache;
+	def commandCacheLog = [:];	
+	def commandResponseLog = [:]
+	
+	public ExecuteFW2(conn, commandCache)
+	{		
+		this.conn = conn;
+		this.commandCache = commandCache;
+	}
+	
+	public sendAndExpect(command, prompt, timeout)
+	{
+		return sendAndExpect(command, prompt, timeout, false);
+	}
+	
+	public sendAndExpect(command, prompt, timeout, ignoreErrorHandling)
+	{
+		// When a command is entered incorrectly (syntax error) the SRX device responds with
+		// messages related to invalid syntax. This conflicts with standard expect functionality.
+		// To work aournd this there is logic (regex below) to only show the recent message between
+		// the last two > prompts. Sometimes this workaround causes other parsing issues, which is why
+		// syntax handling logic can be disabled with the method parameter "ignoreErrorHandling"
+		
+		if(commandCache.containsKey(command.trim()))
+		{
+			commandResponseLog[command.trim()] = "===CACHED COMMAND===\n" + commandCache[command.trim()];
+			return commandCache[command.trim()];
+		}
+		else
+		{	
+			
+			def joinedPrompts = prompt;
+			if(prompt instanceof List)
+			{
+				joinedPrompts = "(" + prompt.join("|") + ")";
+			}
+	
+			conn.send(command);
+			Thread.sleep(100);
+			println("Sent command: $command");
+			def result = conn.expect(prompt,timeout);
+			println("Last Expect:" + result)
+			def whileLoopCount = 0;
+			while(!(result ==~ /(?s).*$joinedPrompts\s*$/) && whileLoopCount < 20)
+			{				
+				whileLoopCount++
+				// println("While Loop Count:" + whileLoopCount);
+				result += conn.expect(prompt,timeout);
+				// println("Last Expect:" + result)
+			}
+			
+			if(result.count('#') > 1)
+			{
+				result = result.find(/(?ms).+(#.+#$)/) //Only grab the last occurence of text between two # characters
+			}
+			
+			commandResponseLog[command.trim()] = result;
+			commandCache[command.trim()] = result;			
+			return result;
+			
+		}
+	}
+	
+	public getCommandResponseLog()
+	{
+		return commandResponseLog;	
+	}	
 
-            Ext.getBody().mask('Executing Automation...');
+	public getCommandCache()
+	{
+		return commandCache;	
+	}		
+}
 
-            Ext.Ajax.request({
-                url: '/resolve/service/runbook/execute',
-                timeout: 1800000,
-                params: Object.assign({
-                    WIKI: 'CIO_NORA_NETWORK.LB_VIP_DECOM_PRE_REVIEW',
-                    USERID: '$wikiUser.getUsername()',
-                    PROBLEMID: 'NEW'
-                }, dataPayload),
-                success: function(response, opts) {
-                    Ext.getBody().unmask();
-                    Ext.Msg.alert('Success', 'Successfully executed runbook. Please check your email or status dashboard.');
-                },
-                failure: function(response, opts) {
-                    Ext.getBody().unmask();
-                    Ext.Msg.alert('Failure', 'Runbook execution failed. Please try again or contact support.');
-                }
-            });
-        }
-    });
 
-    var leftPanel = Ext.create('Ext.panel.Panel', {
-        width: 550,
-        layout: 'vbox',
-        padding: 20,
-        items: [
-            emailField,
-            ritmField,
-            vipNameField,
-            deviceNamesField,
-            backendServerField,
-            routePrefixField,
-            phase1FileInput,
-            deleteFileBtn,
-            runAutomationBtn
-        ]
-    });
 
-    var mainPanel = Ext.create('Ext.panel.Panel', {
-        layout: 'hbox',
-        scrollable: true,
-        bodyPadding: 10,
-        items: [leftPanel, fileContentDisplay]
-    });
 
-    Ext.create('Ext.container.Viewport', {
-        layout: {
-            type: 'vbox',
-            align: 'center',
-            pack: 'start'
-        },
-        scrollable: true,
-        items: [topLeft, mainPanel]
-    });
-});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+command:
+> sh save | grep <Backend server Name>
+> sh save | grep 10.237.250.35:443
+add service 10.237.250.35:443 10.237.250.35 SSL_BRIDGE 443 -gslb NONE -maxClient 0 -maxReq 0 -cip DISABLED -usip NO -useproxyport YES -sp ON -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP NO -state DISABLED -comment BDC8RFISOSIAP01 -devno 44892160 ## exclude “-devno 44892160” as backout plan
+bind lb vserver bdoc-ose-wildcard-443-sslbridge-staging 10.237.250.35:443
+## Comments : if multipe lines like this, don’t put in the install plan
+bind service 10.237.250.35:443 -monitorName ocp-router -devno 52527104
+> 
+result:
+server 10.237.250.35:443 is bind only VIP bdoc-ose-wildcard-443-sslbridge-staging
+state - disabled 
+
+command:
+> sh save | grep 10.237.250.35:80
+add service 10.237.250.35:80 10.237.250.35 HTTP 80 -gslb NONE -maxClient 0 -maxReq 0 -cip DISABLED -usip NO -useproxyport YES -sp ON -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP YES -state DISABLED -comment BDC8RFISOSIAP01 -devno 44990464
+bind lb vserver bdoc-ose-wildcard-80-staging 10.237.250.35:80
+bind service 10.237.250.35:80 -monitorName ocp-router -devno 52428800
+>
+result:
+server 10.237.250.35:80 is bind only VIP bdoc-ose-wildcard-80-staging
+state - disabled 
