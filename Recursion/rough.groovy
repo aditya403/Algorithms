@@ -35,6 +35,8 @@ Ext.onReady(function() {
         });
     }
 
+    var emailField = createTextField('userEmail', 'Your Email');
+    var ritmField = createTextField('ritmNumber', 'RITM Number');
     var vipNameField = createTextField('vipNames', 'VIP Name(s) (comma-separated)');
     var deviceNamesField = createTextField('deviceNames', 'Device Name(s)');
     var backendServerField = createTextField('backendServers', 'Backend Server(s)');
@@ -110,6 +112,8 @@ Ext.onReady(function() {
                 BACKEND_SERVERS: backendServerField.getValue(),
                 ROUTE_PREFIX_LIST: routePrefixField.getValue(),
                 PHASE1_SCRIPT: uploadedFileContent,
+                EMAIL: emailField.getValue(),
+                RITM: ritmField.getValue(),
                 VERBOSE: true,
                 AJAXCALL: true,
                 WSDATA_FLAG: true
@@ -142,6 +146,8 @@ Ext.onReady(function() {
         layout: 'vbox',
         padding: 20,
         items: [
+            emailField,
+            ritmField,
             vipNameField,
             deviceNamesField,
             backendServerField,
