@@ -1,211 +1,93 @@
-import groovy.json.JsonOutput;
-import groovy.json.JsonSlurper;
+/**
+ * ActionTask Name: PreCheckBackendServer
+ * Purpose: Validate whether the given backend server is active or not,
+ *          and show which VIP(s) it is bound to along with its state.
+ *
+ * Inputs:
+ *   BackendServer (String) - IP:PORT of the backend (e.g. "10.237.250.35:443")
+ *
+ * Outputs:
+ *   preCheckResult (String) - A summary of backend bindings and state
+ */
 
-def condition = "good";
-def severity = "good";
-def summary = "";
-def detail = "";
+import com.resolve.sysapi.*
+import com.resolve.sysapi.workflow.*
 
-// def prompt = INPUTS["RTR_PROMPT"] ?: "";
-def prompt = /[\#,\>]/;
-def vipName = assertInput("VIP_NAME");
+def logger = execution.getLogger()
 
-
-def timeout = INPUTS["TIMEOUT"] ?: 10;
-def finalVipState = ""
-
-try
-{
-	detail += SESSIONS.getClass()
-	def sessionId = assertInput("SESSION_ID");
-	def conn = sessionId ? SESSIONS.get(sessionId) : SESSIONS.get()
-	if(!conn)
-	{
-		throw new Exception("SESSION(connection) object was not found. $sessionId");
-	}
-
-	// Execute command
-	def execute = new ExecuteFW(conn);
-	
-	execute.sendAndExpect("bash", prompt, 5, true);
-	def cmd = "sh save | grep " + vipName
-	
-	timeout = timeout.toInteger();
-	def result = execute.sendAndExpect(cmd, prompt, timeout, true);
-	// detail += result
-	
-	result.eachLine{it->
-		if(it=~ /^add\slb/){
-			def matcher = it =~ /-state\s(?<state>(\w+))/
-			if(matcher.find()){
-				detail += it + "\n"
-				finalVipState += matcher.group("state")
-			}	
-		}
-	}
-	if(finalVipState == "DISABLED"){
-		condition = "bad"	
-	}
-	
+// ✅ 1. Read Input
+def backendIpPort = input.get("BackendServer")
+if (!backendIpPort) {
+    output.set("preCheckResult", "ERROR: BackendServer input not provided.")
+    return
 }
-catch(Exception e)
-{
-    condition = "bad";
-    severity = "critical";
-    summary = "Encountered exception: " + e.getMessage();
-    detail += "Encountered the following exception:";
-    detail += "\n" + e.toString();
-    for(line in e.getStackTrace())
-    {
-        detail += "\n\t" + line
+
+logger.info("Starting PreCheck for backend server: ${backendIpPort}")
+
+// ✅ 2. Run Command
+def command = "sh save | grep ${backendIpPort}"
+logger.info("Executing command: ${command}")
+
+def cmdResult
+try {
+    cmdResult = commandHelper.executeCommand(command)
+} catch (Exception e) {
+    logger.error("Command execution failed: ${e.message}")
+    output.set("preCheckResult", "Command execution failed: ${e.message}")
+    return
+}
+
+if (!cmdResult) {
+    logger.warn("No output received from command for ${backendIpPort}")
+    output.set("preCheckResult", "No command output received for ${backendIpPort}")
+    return
+}
+
+// ✅ 3. Parse Command Result
+def cmdResultList = new StringReader(cmdResult).readLines()
+def state = "UNKNOWN"
+def vipList = []
+
+cmdResultList.each { line ->
+    line = line.trim()
+    
+    // Extract service state
+    if (line.startsWith("add service") && line.contains(backendIpPort)) {
+        def matcher = line =~ /-state\s+(\S+)/
+        if (matcher.find()) {
+            state = matcher.group(1)
+            logger.info("Found backend state: ${state}")
+        }
+    }
+    
+    // Extract VIP bindings
+    else if (line.startsWith("bind lb vserver") && line.contains(backendIpPort)) {
+        def matcher = line =~ /bind lb vserver\s+(\S+)/
+        if (matcher.find()) {
+            def vipName = matcher.group(1)
+            vipList << vipName
+            logger.info("Found VIP binding: ${vipName}")
+        }
     }
 }
 
-def contentReturn = [:]
-contentReturn.condition = condition;
-contentReturn.severity = severity;
-contentReturn.summary = summary;
-contentReturn.detail = detail;
+// ✅ 4. Compose Result Summary
+def resultMessage
 
-contentReturn.finalVipState = finalVipState;
-
-
-INPUTS["CONTENT_RETURN"] = contentReturn;
-
-
-def assertInput(inputsName)
-{
-    if(!INPUTS[inputsName]) throw new GroovyRuntimeException("Missing required input ${inputsName}");
-    return INPUTS[inputsName];
+if (vipList.size() > 1) {
+    resultMessage = "server ${backendIpPort} is bound to multiple VIPs: ${vipList.join(', ')}\nstate - ${state.toLowerCase()}"
+} else if (vipList.size() == 1) {
+    resultMessage = "server ${backendIpPort} is bind only VIP ${vipList[0]}\nstate - ${state.toLowerCase()}"
+} else {
+    // (Per your rule #2, this should never happen)
+    resultMessage = "server ${backendIpPort} not bound to any VIP\nstate - ${state.toLowerCase()}"
 }
 
-class ExecuteFW
-{
-	def conn;
-	def commandResponseLog = [:]
-	
-	public ExecuteFW(conn)
-	{		
-		this.conn = conn;
-	}
-	
-	public sendAndExpect(command, prompt, timeout)
-	{
-		return sendAndExpect(command, prompt, timeout, false);
-	}
-	
-	public sendAndExpect(command, prompt, timeout, ignoreErrorHandling)
-	{
-		// if you get null results, try setting ignoreErrorHandling to true
-		if(commandResponseLog.containsKey(command))
-		{
-			return commandResponseLog[command];
-		}
-		else
-		{		
-			conn.send(command);
-			Thread.sleep(100);
-			def result = conn.expect(prompt,timeout);
-			if(!ignoreErrorHandling)
-			{
-				def whileLoopCount = 0;
-				while(!(result ==~ /(?s).*>\s*$/) && whileLoopCount < 20)
-				{				
-					whileLoopCount++
-					result += conn.expect(prompt,timeout);
-				}
-				
-				if(result.count('>') > 1)
-				{
-					result = result.find(/(?ms).+(>.+>$)/)
-				}
-			}
-			commandResponseLog[command] = result;			
-			return result;
-		}
-	}
-	
-	public getCommandResponseLog()
-	{
-		return commandResponseLog;	
-	}	
-}
-class ExecuteFW2
-{
-	def conn;
-	def commandCache;
-	def commandCacheLog = [:];	
-	def commandResponseLog = [:]
-	
-	public ExecuteFW2(conn, commandCache)
-	{		
-		this.conn = conn;
-		this.commandCache = commandCache;
-	}
-	
-	public sendAndExpect(command, prompt, timeout)
-	{
-		return sendAndExpect(command, prompt, timeout, false);
-	}
-	
-	public sendAndExpect(command, prompt, timeout, ignoreErrorHandling)
-	{
-		// When a command is entered incorrectly (syntax error) the SRX device responds with
-		// messages related to invalid syntax. This conflicts with standard expect functionality.
-		// To work aournd this there is logic (regex below) to only show the recent message between
-		// the last two > prompts. Sometimes this workaround causes other parsing issues, which is why
-		// syntax handling logic can be disabled with the method parameter "ignoreErrorHandling"
-		
-		if(commandCache.containsKey(command.trim()))
-		{
-			commandResponseLog[command.trim()] = "===CACHED COMMAND===\n" + commandCache[command.trim()];
-			return commandCache[command.trim()];
-		}
-		else
-		{	
-			
-			def joinedPrompts = prompt;
-			if(prompt instanceof List)
-			{
-				joinedPrompts = "(" + prompt.join("|") + ")";
-			}
-	
-			conn.send(command);
-			Thread.sleep(100);
-			println("Sent command: $command");
-			def result = conn.expect(prompt,timeout);
-			println("Last Expect:" + result)
-			def whileLoopCount = 0;
-			while(!(result ==~ /(?s).*$joinedPrompts\s*$/) && whileLoopCount < 20)
-			{				
-				whileLoopCount++
-				// println("While Loop Count:" + whileLoopCount);
-				result += conn.expect(prompt,timeout);
-				// println("Last Expect:" + result)
-			}
-			
-			if(result.count('#') > 1)
-			{
-				result = result.find(/(?ms).+(#.+#$)/) //Only grab the last occurence of text between two # characters
-			}
-			
-			commandResponseLog[command.trim()] = result;
-			commandCache[command.trim()] = result;			
-			return result;
-			
-		}
-	}
-	
-	public getCommandResponseLog()
-	{
-		return commandResponseLog;	
-	}	
+logger.info("PreCheck Result:\n${resultMessage}")
 
-	public getCommandCache()
-	{
-		return commandCache;	
-	}		
-}
+// ✅ 5. Set Output
+output.set("preCheckResult", resultMessage)
+
 
 
 
