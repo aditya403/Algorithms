@@ -18,7 +18,7 @@ Ext.onReady(function() {
             '</p>',
             '<ul style="font-family: Helvetica; font-size: 12px; text-align: left; margin: 10px auto 0 auto; max-width: 600px;">',
             '<li>Fill out all fields and upload the Phase 1 script (.txt)</li>',
-            '<li><a href="mailto:nss_automation@fisglobal.com">Contact us</a> with questions.</li>',
+            '<li><a href="mailto:adityakumar.mishra@fisglobal.com?cc=Gil.Mendelaoui@fisglobal.com&subject=Question%20regarding%20LB%20VIP%20Decom">Contact us</a> with questions.</li>',
             '</ul>',
             '</div>'
         ].join(' ')
