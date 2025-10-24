@@ -12,3 +12,4 @@ ip prefix-list PRIMARY seq 5 permit 10.239.3.23/32
 result:
 prefix-list configured 
 Note: please check pre check config we already find under IP 10.239.3.23 , 2 VIP are configured which are requested to decom in the RITM
+Also run the command on the Secondary LB to validate the sequence number, it may not match the Primary LB.
