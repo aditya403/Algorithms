@@ -19,92 +19,134 @@ Also run the command on the Secondary LB to validate the sequence number, it may
 
 
 /**
- * ActionTask Name: PreCheckBackendServer
- * Purpose: Validate whether the given backend server is active or not,
- *          and show which VIP(s) it is bound to along with its state.
+ * ActionTask Name: PreCheckRouteAndPrefixList
+ * Description:
+ *   This task validates if the given VIP IP has:
+ *     1. Proper Route configuration on the Load Balancer
+ *     2. Proper Prefix-List configuration on both Primary and Secondary Load Balancers
  *
- * Inputs:
- *   BackendServer (String) - IP:PORT of the backend (e.g. "10.237.250.35:443")
+ * Input Parameters:
+ *   - VIP_IP (e.g. 10.239.3.23)
+ *   - PRIMARY_DEVICE (Hostname or IP of Primary LB)
+ *   - SECONDARY_DEVICE (Hostname or IP of Secondary LB)
  *
- * Outputs:
- *   preCheckResult (String) - A summary of backend bindings and state
+ * Output:
+ *   Returns status summary of Route and Prefix-List configurations
  */
 
-import com.resolve.sysapi.*
-import com.resolve.sysapi.workflow.*
+import com.resolve.automation.utils.ConnectionUtils
+import com.resolve.automation.logging.Logger
 
-def logger = execution.getLogger()
+def logger = new Logger()
+def resultMap = [
+    routeConfigured: false,
+    routeMisconfigured: false,
+    prefixListConfigured: false,
+    primarySeq: null,
+    secondarySeq: null
+]
 
-// ✅ 1. Read Input
-def backendIpPort = input.get("BackendServer")
-if (!backendIpPort) {
-    output.set("preCheckResult", "ERROR: BackendServer input not provided.")
-    return
+// ======================== INPUT HANDLING ========================
+def vipIp = inputs["VIP_IP"]
+def primaryDevice = inputs["PRIMARY_DEVICE"]
+def secondaryDevice = inputs["SECONDARY_DEVICE"]
+
+if (!vipIp || !primaryDevice || !secondaryDevice) {
+    throw new Exception("Missing required input(s): VIP_IP, PRIMARY_DEVICE, or SECONDARY_DEVICE")
 }
 
-logger.info("Starting PreCheck for backend server: ${backendIpPort}")
+logger.info("Starting PreCheck Route and Prefix validation for VIP: ${vipIp}")
+logger.info("Primary Device: ${primaryDevice}")
+logger.info("Secondary Device: ${secondaryDevice}")
 
-// ✅ 2. Run Command
-def command = "sh save | grep ${backendIpPort}"
-logger.info("Executing command: ${command}")
+// ======================== FUNCTION DEFINITIONS ========================
 
-def cmdResult
-try {
-    cmdResult = commandHelper.executeCommand(command)
-} catch (Exception e) {
-    logger.error("Command execution failed: ${e.message}")
-    output.set("preCheckResult", "Command execution failed: ${e.message}")
-    return
+def runCommandOnDevice(device, command) {
+    def session = ConnectionUtils.connect(device)
+    def output = session.execute(command)
+    session.disconnect()
+    return output ?: ""
 }
 
-if (!cmdResult) {
-    logger.warn("No output received from command for ${backendIpPort}")
-    output.set("preCheckResult", "No command output received for ${backendIpPort}")
-    return
-}
+// ======================== ROUTE VALIDATION ========================
 
-// ✅ 3. Parse Command Result
-def cmdResultList = new StringReader(cmdResult).readLines()
-def state = "UNKNOWN"
-def vipList = []
+def routeCommand = "sh save | grep ${vipIp}"
+def routeOutput = runCommandOnDevice(primaryDevice, routeCommand)
+logger.info("Route check output for ${primaryDevice}:\n${routeOutput}")
 
-cmdResultList.each { line ->
-    line = line.trim()
-    
-    // Extract service state
-    if (line.startsWith("add service") && line.contains(backendIpPort)) {
-        def matcher = line =~ /-state\s+(\S+)/
-        if (matcher.find()) {
-            state = matcher.group(1)
-            logger.info("Found backend state: ${state}")
-        }
+if (routeOutput) {
+    def lines = routeOutput.readLines()
+    def validRoute = lines.find { line ->
+        line.trim().startsWith("add") &&
+        line.contains(vipIp) &&
+        line.contains("-snmp DISABLED")
     }
-    
-    // Extract VIP bindings
-    else if (line.startsWith("bind lb vserver") && line.contains(backendIpPort)) {
-        def matcher = line =~ /bind lb vserver\s+(\S+)/
-        if (matcher.find()) {
-            def vipName = matcher.group(1)
-            vipList << vipName
-            logger.info("Found VIP binding: ${vipName}")
+
+    if (validRoute) {
+        if (validRoute.contains("-hostRoute ENABLED")) {
+            resultMap.routeConfigured = true
+            logger.info("Route properly configured for ${vipIp} on ${primaryDevice}")
+        } else {
+            resultMap.routeMisconfigured = true
+            logger.warn("Route misconfigured (missing -hostRoute ENABLED) on ${primaryDevice}")
         }
+    } else {
+        resultMap.routeMisconfigured = true
+        logger.warn("Route misconfigured (missing -snmp DISABLED or doesn't start with add) on ${primaryDevice}")
     }
-}
-
-// ✅ 4. Compose Result Summary
-def resultMessage
-
-if (vipList.size() > 1) {
-    resultMessage = "server ${backendIpPort} is bound to multiple VIPs: ${vipList.join(', ')}\nstate - ${state.toLowerCase()}"
-} else if (vipList.size() == 1) {
-    resultMessage = "server ${backendIpPort} is bind only VIP ${vipList[0]}\nstate - ${state.toLowerCase()}"
 } else {
-    // (Per your rule #2, this should never happen)
-    resultMessage = "server ${backendIpPort} not bound to any VIP\nstate - ${state.toLowerCase()}"
+    logger.warn("No route found for ${vipIp} on ${primaryDevice}")
 }
 
-logger.info("PreCheck Result:\n${resultMessage}")
+// ======================== PREFIX-LIST VALIDATION (PRIMARY) ========================
 
-// ✅ 5. Set Output
-output.set("preCheckResult", resultMessage)
+def prefixCmdPrimary = "vtysh -c 'sh run | in ${vipIp}'"
+def prefixOutputPrimary = runCommandOnDevice(primaryDevice, prefixCmdPrimary)
+logger.info("Prefix-list output (Primary):\n${prefixOutputPrimary}")
 
+if (prefixOutputPrimary.contains("ip prefix-list")) {
+    resultMap.prefixListConfigured = true
+    def seqMatch = prefixOutputPrimary =~ /seq (\d+)/
+    if (seqMatch.find()) resultMap.primarySeq = seqMatch[0][1]
+} else {
+    logger.warn("Prefix-list not configured for ${vipIp} on ${primaryDevice}")
+}
+
+// ======================== PREFIX-LIST VALIDATION (SECONDARY) ========================
+
+def prefixCmdSecondary = "vtysh -c 'sh run | in ${vipIp}'"
+def prefixOutputSecondary = runCommandOnDevice(secondaryDevice, prefixCmdSecondary)
+logger.info("Prefix-list output (Secondary):\n${prefixOutputSecondary}")
+
+def seqMatch2 = prefixOutputSecondary =~ /seq (\d+)/
+if (seqMatch2.find()) resultMap.secondarySeq = seqMatch2[0][1]
+
+// ======================== RESULT BUILDING ========================
+
+def summary = []
+if (resultMap.routeConfigured) {
+    summary << "✅ Route configured correctly on ${primaryDevice}"
+} else if (resultMap.routeMisconfigured) {
+    summary << "⚠️ Route misconfigured on ${primaryDevice} (missing -snmp DISABLED or hostRoute ENABLED)"
+} else {
+    summary << "❌ Route not configured on ${primaryDevice}"
+}
+
+summary << (resultMap.prefixListConfigured ? "✅ Prefix-list configured on Primary" : "❌ Prefix-list not configured on Primary")
+
+if (resultMap.primarySeq && resultMap.secondarySeq) {
+    if (resultMap.primarySeq != resultMap.secondarySeq) {
+        summary << "⚠️ Prefix-list sequence mismatch (Primary: ${resultMap.primarySeq}, Secondary: ${resultMap.secondarySeq})"
+    } else {
+        summary << "✅ Prefix-list sequence matched (${resultMap.primarySeq})"
+    }
+} else if (!resultMap.secondarySeq) {
+    summary << "❌ Prefix-list not configured on Secondary"
+}
+
+// ======================== FINAL LOG & OUTPUT ========================
+
+logger.info("PreCheck Summary:\n${summary.join('\n')}")
+task.setOutput("PreCheck Summary", summary.join("\n"))
+
+return summary.join("\n")
