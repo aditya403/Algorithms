@@ -594,3 +594,4 @@ Ext.onReady(function() {
         items: [topLeft, mainPanel]
     });
 });
+
