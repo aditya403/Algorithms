@@ -420,7 +420,6 @@ bind ssl vserver VIP-156.55.154.29-443 -eccCurveName P_521
 
 
 
-
 ////////////
 // VIP Decommission Automation Front Page (ExtJS)
 ////////////
@@ -543,8 +542,6 @@ Ext.onReady(function() {
                 WSDATA_FLAG: true
             };
 
-            Ext.getBody().mask('Executing Automation...');
-
             Ext.Ajax.request({
                 url: '/resolve/service/runbook/execute',
                 timeout: 1800000,
@@ -554,11 +551,9 @@ Ext.onReady(function() {
                     PROBLEMID: 'NEW'
                 }, dataPayload),
                 success: function(response, opts) {
-                    Ext.getBody().unmask();
                     Ext.Msg.alert('Success', 'Successfully executed runbook. Please check your email or status dashboard.');
                 },
                 failure: function(response, opts) {
-                    Ext.getBody().unmask();
                     Ext.Msg.alert('Failure', 'Runbook execution failed. Please try again or contact support.');
                 }
             });
@@ -599,5 +594,3 @@ Ext.onReady(function() {
         items: [topLeft, mainPanel]
     });
 });
-
-
