@@ -420,19 +420,28 @@ bind ssl vserver VIP-156.55.154.29-443 -eccCurveName P_521
 
 
 
---> sh run | i p750-Curtiz
---> object network p750-Curtiz
--->  network-object object p750-Curtiz
--->  network-object object p750-Curtiz
--->  network-object object p750-Curtiz
---> access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47 
---> access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log 
---> access-list global_access extended permit ip object p750-Curtiz object-group group_local_vmhost log 
---> access-list global_access extended permit tcp object-group CTX_Complaince object p750-Curtiz object-group port-ctx-comp 
---> access-list global_access extended permit tcp object p750-Curtiz object emeasvn.fnfis.com eq https 
---> access-list global_access extended permit ip object-group DM_INLINE_NETWORK_80 object p750-Curtiz 
---> access-list global_access extended permit tcp object p750-Curtiz object copara 
---> access-list global_access extended permit tcp object copara object p750-Curtiz 
---> access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 object p750-Curtiz eq ssh 
---> access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 33501 
---> access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 11799 
+def fetchNetworkObjects(scriptText) {
+    def resultList = []
+    def currentObject = null
+    def networkObjects = [] as Set  // Use Set to avoid duplicates
+
+    scriptText.eachLine { line ->
+        line = line.replaceAll(/^-->\s*/, '').trim()  // Remove '-->' and extra spaces
+
+        if (line.startsWith('object network')) {
+            // Save the top-level object name
+            currentObject = line.split(/\s+/)[2]
+        } else if (currentObject && line.startsWith('network-object object')) {
+            // Extract the object name from the network-object line
+            def objName = line.split(/\s+/)[2]
+            networkObjects << objName
+        }
+    }
+
+    // If we found at least one valid block, add to the result list
+    if (!networkObjects.isEmpty()) {
+        resultList << networkObjects.toList()
+    }
+
+    return resultList
+}
