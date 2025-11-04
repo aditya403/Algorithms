@@ -421,27 +421,21 @@ bind ssl vserver VIP-156.55.154.29-443 -eccCurveName P_521
 
 
 def fetchNetworkObjects(scriptText) {
-    def resultList = []
+    def networkObjects = [] as Set  // Use Set to auto-remove duplicates
     def currentObject = null
-    def networkObjects = [] as Set  // Use Set to avoid duplicates
 
     scriptText.eachLine { line ->
         line = line.replaceAll(/^-->\s*/, '').trim()  // Remove '-->' and extra spaces
 
         if (line.startsWith('object network')) {
-            // Save the top-level object name
+            // Capture the main object name
             currentObject = line.split(/\s+/)[2]
         } else if (currentObject && line.startsWith('network-object object')) {
-            // Extract the object name from the network-object line
+            // Extract object name from each network-object line
             def objName = line.split(/\s+/)[2]
             networkObjects << objName
         }
     }
 
-    // If we found at least one valid block, add to the result list
-    if (!networkObjects.isEmpty()) {
-        resultList << networkObjects.toList()
-    }
-
-    return resultList
+    return networkObjects.toList()
 }
