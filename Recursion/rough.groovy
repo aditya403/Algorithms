@@ -527,3 +527,27 @@ no network-object object ukbitestmvrs11
  
 no object network p750-Curtiz
 no object network ukbitestmvrs11
+
+
+
+
+def shouldProcessLine(line, ip) {
+    // Find all "host <something>" patterns in the line
+    def matcher = (line =~ /host\s+(\S+)/)
+    
+    // If no "host" is present, return true (means IP not mentioned at all)
+    if (!matcher) {
+        return true
+    }
+
+    // Extract all host IPs from the line
+    def hostIPs = matcher.collect { it[1] }
+
+    // If the given IP is present among the host IPs, return true
+    if (hostIPs.contains(ip)) {
+        return true
+    }
+
+    // If there are host IPs but not matching the requested IP, return false
+    return false
+}
