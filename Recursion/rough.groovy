@@ -314,8 +314,8 @@ object-group network ESXi_DESTINATION_PHL_CRL
 
 
 
-def reorderFirewallScript(String inputScript) {
-    // Buckets in install plan order
+def reorderFirewallScript(List<String> scriptLines) {
+    // Buckets in correct install plan order
     def aclLines = []
     def natLines = []
     def parentObjectGroupLines = []
@@ -323,14 +323,11 @@ def reorderFirewallScript(String inputScript) {
     def parentObjectLines = []
     def objectLines = []
 
-    // Split input script
-    def lines = inputScript.readLines()
     def currentObjectGroupBlock = []
 
-    lines.each { rawLine ->
-        def line = rawLine.trim()
-
-        if (!line) return // skip blanks
+    scriptLines.each { rawLine ->
+        def line = rawLine?.trim()
+        if (!line) return // skip blanks or nulls
 
         switch (true) {
             case line.startsWith("no access-list"):
@@ -342,7 +339,7 @@ def reorderFirewallScript(String inputScript) {
                 break
 
             case line.startsWith("no object-group network"):
-                // commit any ongoing object-group block
+                // Commit any open object-group block first
                 if (currentObjectGroupBlock) {
                     objectGroupLines.addAll(currentObjectGroupBlock)
                     currentObjectGroupBlock.clear()
@@ -351,7 +348,7 @@ def reorderFirewallScript(String inputScript) {
                 break
 
             case line.startsWith("object-group network"):
-                // commit previous block before starting new
+                // Commit previous object-group block before starting a new one
                 if (currentObjectGroupBlock) {
                     objectGroupLines.addAll(currentObjectGroupBlock)
                     currentObjectGroupBlock.clear()
@@ -360,7 +357,7 @@ def reorderFirewallScript(String inputScript) {
                 break
 
             case line.startsWith("no object network"):
-                // commit any open block before parent object
+                // Commit any open object-group block before moving on
                 if (currentObjectGroupBlock) {
                     objectGroupLines.addAll(currentObjectGroupBlock)
                     currentObjectGroupBlock.clear()
@@ -369,7 +366,6 @@ def reorderFirewallScript(String inputScript) {
                 break
 
             case line.startsWith("object network"):
-                // commit any open block before object
                 if (currentObjectGroupBlock) {
                     objectGroupLines.addAll(currentObjectGroupBlock)
                     currentObjectGroupBlock.clear()
@@ -378,12 +374,12 @@ def reorderFirewallScript(String inputScript) {
                 break
 
             case line.startsWith("no network-object") || line.startsWith("network-object"):
-                // belongs inside the current object-group block
+                // part of an object-group block
                 currentObjectGroupBlock << "  " + line
                 break
 
             default:
-                // fallback (if line doesn’t match anything else)
+                // catch any stragglers or indented continuation
                 if (currentObjectGroupBlock) {
                     currentObjectGroupBlock << line
                 }
@@ -391,12 +387,12 @@ def reorderFirewallScript(String inputScript) {
         }
     }
 
-    // commit any last block
+    // Commit any remaining open object-group block
     if (currentObjectGroupBlock) {
         objectGroupLines.addAll(currentObjectGroupBlock)
     }
 
-    // Build final output sequence
+    // Build final install plan in required order
     def finalScript = []
     finalScript.addAll(aclLines)
     finalScript.addAll(natLines)
@@ -405,7 +401,8 @@ def reorderFirewallScript(String inputScript) {
     finalScript.addAll(parentObjectLines)
     finalScript.addAll(objectLines)
 
-    return finalScript.join("\n")
+    // Return as list
+    return finalScript.findAll { it?.trim() }
 }
 
 
