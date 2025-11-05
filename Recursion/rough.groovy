@@ -468,7 +468,23 @@ no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 
 
 
 
-
+access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 11799
+access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 33501
+access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 object p750-Curtiz eq ssh
+access-list global_access extended permit tcp object copara object p750-Curtiz
+access-list global_access extended permit tcp object p750-Curtiz object copara
+access-list global_access extended permit ip object-group DM_INLINE_NETWORK_80 object p750-Curtiz
+access-list global_access extended permit tcp object p750-Curtiz object emeasvn.fnfis.com eq https
+access-list global_access extended permit tcp object-group CTX_Complaince object p750-Curtiz object-group port-ctx-comp
+access-list global_access extended permit ip object p750-Curtiz object-group group_local_vmhost log
+access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log
+access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47
+access-list global_access extended permit tcp host 10.74.145.70 host 10.166.86.153 eq 10596
+access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT-2 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
+access-list global_access extended permit tcp host 192.168.2.81 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
+access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT host 10.166.86.153 object-group PORT-PRODUCT-TESTING
+access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 eq 33598
+access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 object-group port_v32
 
 no access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47
 no access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log
