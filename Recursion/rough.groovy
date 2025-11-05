@@ -342,3 +342,63 @@ no access-list global_access extended permit tcp host 192.168.2.81 host 10.166.8
 no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT host 10.166.86.153 object-group PORT-PRODUCT-TESTING
 no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 eq 33598
 no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 object-group port_v32
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+no access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47
+no access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log
+no access-list global_access extended permit ip object p750-Curtiz object-group group_local_vmhost log
+no access-list global_access extended permit tcp object-group CTX_Complaince object p750-Curtiz object-group port-ctx-comp
+no access-list global_access extended permit tcp object p750-Curtiz object emeasvn.fnfis.com eq https
+no access-list global_access extended permit ip object-group DM_INLINE_NETWORK_80 object p750-Curtiz
+no access-list global_access extended permit tcp object p750-Curtiz object copara
+no access-list global_access extended permit tcp object copara object p750-Curtiz
+no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 object p750-Curtiz eq ssh
+no access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 33501
+no access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 11799
+ 
+no access-list global_access extended permit tcp host 10.74.145.70 host 10.166.86.153 eq 10596
+no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT-2 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
+no access-list global_access extended permit tcp host 192.168.2.81 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
+no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT host 10.166.86.153 object-group PORT-PRODUCT-TESTING
+no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 eq 33598
+no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 object-group port_v32
+ 
+object-group network grp_cortex_test_2
+no network-object host 10.166.86.153
+object-group network RC-Project-Group
+no network-object host 10.166.86.153
+object-group network DEV-LPAR-DPP
+no network-object host 10.166.86.153
+object-group network LPAR-DPP-DEVELOPMENT
+no network-object host 10.166.86.153
+object-group network CORTEX_SERVERS
+no network-object host 10.166.86.153
+ 
+object-group network group-p750-servers
+no network-object object p750-Curtiz
+object-group network grp_unix_servers_2
+no network-object object p750-Curtiz
+object-group network UK-DEV-SERVERS
+no network-object object p750-Curtiz
+object-group network group_new1102
+no network-object object ukbitestmvrs11
+ 
+no object network p750-Curtiz
+no object network ukbitestmvrs11
