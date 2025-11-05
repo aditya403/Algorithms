@@ -415,30 +415,22 @@ def fetchObjectGroupsWithObject(scriptText, targetObject) {
     def includeCurrentGroup = false
 
     scriptText.eachLine { line ->
-        line = line.replaceAll(/^-->\s*/, '').trim() // Remove '-->' and extra spaces
+        line = line.replaceAll(/^-->\s*/, '').trim() // Remove '-->' and spaces
 
         if (line.startsWith('object-group network')) {
-            // Start a new object-group block
-            if (includeCurrentGroup) {
-                // if the previous block matched, append a blank to separate visually
-                resultLines << ""
-            }
             currentGroup = line
             includeCurrentGroup = false
         } else if (line.startsWith('network-object object') && line.contains(targetObject)) {
-            // Found target object under current group
             includeCurrentGroup = true
-            // Add both the group and the matching line
+            // Add both lines only once per group
             if (!resultLines.contains(currentGroup)) resultLines << currentGroup
             resultLines << "  ${line}"
         }
     }
 
-    return resultLines
+    // Filter out any accidental blanks (edge cases)
+    return resultLines.findAll { it?.trim() }
 }
-
-
-
 
 
 
