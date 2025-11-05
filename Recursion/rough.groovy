@@ -314,7 +314,99 @@ object-group network ESXi_DESTINATION_PHL_CRL
 
 
 
+def reorderFirewallScript(String inputScript) {
+    // Buckets in install plan order
+    def aclLines = []
+    def natLines = []
+    def parentObjectGroupLines = []
+    def objectGroupLines = []
+    def parentObjectLines = []
+    def objectLines = []
 
+    // Split input script
+    def lines = inputScript.readLines()
+    def currentObjectGroupBlock = []
+
+    lines.each { rawLine ->
+        def line = rawLine.trim()
+
+        if (!line) return // skip blanks
+
+        switch (true) {
+            case line.startsWith("no access-list"):
+                aclLines << line
+                break
+
+            case line ==~ /.*\bnat\b.*/:
+                natLines << line
+                break
+
+            case line.startsWith("no object-group network"):
+                // commit any ongoing object-group block
+                if (currentObjectGroupBlock) {
+                    objectGroupLines.addAll(currentObjectGroupBlock)
+                    currentObjectGroupBlock.clear()
+                }
+                parentObjectGroupLines << line
+                break
+
+            case line.startsWith("object-group network"):
+                // commit previous block before starting new
+                if (currentObjectGroupBlock) {
+                    objectGroupLines.addAll(currentObjectGroupBlock)
+                    currentObjectGroupBlock.clear()
+                }
+                currentObjectGroupBlock << line
+                break
+
+            case line.startsWith("no object network"):
+                // commit any open block before parent object
+                if (currentObjectGroupBlock) {
+                    objectGroupLines.addAll(currentObjectGroupBlock)
+                    currentObjectGroupBlock.clear()
+                }
+                parentObjectLines << line
+                break
+
+            case line.startsWith("object network"):
+                // commit any open block before object
+                if (currentObjectGroupBlock) {
+                    objectGroupLines.addAll(currentObjectGroupBlock)
+                    currentObjectGroupBlock.clear()
+                }
+                objectLines << line
+                break
+
+            case line.startsWith("no network-object") || line.startsWith("network-object"):
+                // belongs inside the current object-group block
+                currentObjectGroupBlock << "  " + line
+                break
+
+            default:
+                // fallback (if line doesn’t match anything else)
+                if (currentObjectGroupBlock) {
+                    currentObjectGroupBlock << line
+                }
+                break
+        }
+    }
+
+    // commit any last block
+    if (currentObjectGroupBlock) {
+        objectGroupLines.addAll(currentObjectGroupBlock)
+    }
+
+    // Build final output sequence
+    def finalScript = []
+    finalScript.addAll(aclLines)
+    finalScript.addAll(natLines)
+    finalScript.addAll(parentObjectGroupLines)
+    finalScript.addAll(objectGroupLines)
+    finalScript.addAll(parentObjectLines)
+    finalScript.addAll(objectLines)
+
+    return finalScript.join("\n")
+}
 
 
 
