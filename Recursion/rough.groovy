@@ -287,103 +287,67 @@ bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_521
 
 
 
-// Regex matchers for flexible section headers
-def vipSep = { s -> s ==~ /(?i)^[=\-\s]*VIP[=\-\s]*$/ }
-def devSep = { s -> s ==~ /(?i)^[=\-\s]*DEVICES[=\-\s]*$/ }
+// Flexible header matchers
+def vipMarker = ~/^[=\-\s]*VIP[=\-\s]*$/
+def devMarker = ~/^[=\-\s]*DEVICES[=\-\s]*$/
 
-def lines = input.readLines().collect { it.trim() }.findAll { it }
-def result = []
-def currentVips = []
-def currentDevices = []
-def mode = null
+def lines = input.readLines().collect { it.trim() }
 
-for (int i = 0; i < lines.size(); i++) {
-    String line = lines[i]
+// Function to extract all sections by header type (VIP or DEVICES)
+def extractSections = { regex ->
+    def sections = []
+    def inside = false
+    def current = []
 
-    if (vipSep(line)) {
-        if (currentVips && currentDevices) {
-            currentVips.each { v -> 
-                v.DEVICES = currentDevices.clone()
-                result << v
+    lines.each { line ->
+        if (line ==~ regex) {
+            if (inside) {
+                // end of section
+                if (current) sections << current.clone()
+                current.clear()
+                inside = false
+            } else {
+                // start of section
+                inside = true
             }
-            currentVips = []
-            currentDevices = []
+        } else if (inside) {
+            // capture line inside section
+            if (line && !(line ==~ regex)) current << line
         }
-        mode = "VIP"
-        continue
     }
+    return sections
+}
 
-    if (devSep(line)) {
-        mode = "DEVICES"
-        continue
-    }
+// Extract VIP and DEVICE sections independently
+def vipSections = extractSections(vipMarker)
+def deviceSections = extractSections(devMarker)
 
-    if (mode == "VIP") {
+// Prepare result list
+def result = []
+def sysid = 1
+
+// Pair VIP section i with DEVICE section i
+for (int i = 0; i < Math.min(vipSections.size(), deviceSections.size()); i++) {
+    def vips = vipSections[i]
+    def devices = deviceSections[i]
+    vips.each { line ->
         def parts = line.split(/\s+/)
         if (parts.size() >= 2) {
-            currentVips << [VIP: parts[0], PORT: parts[1]]
+            result << [
+                SYSID: sysid++,
+                VIP: parts[0],
+                PORT: parts[1],
+                DEVICES: devices.clone(),
+                STATUS: "UNPROCESSED"
+            ]
         } else if (parts.size() == 1) {
-            currentVips << [VIP: parts[0], PORT: null]
+            result << [
+                SYSID: sysid++,
+                VIP: parts[0],
+                PORT: null,
+                DEVICES: devices.clone(),
+                STATUS: "UNPROCESSED"
+            ]
         }
-        continue
     }
-
-    if (mode == "DEVICES") {
-        currentDevices << line
-        boolean nextIsSep = (i + 1 < lines.size()) && (vipSep(lines[i + 1]) || devSep(lines[i + 1]))
-        boolean atEnd = (i == lines.size() - 1)
-        if (nextIsSep || atEnd) {
-            currentVips.each { v -> 
-                v.DEVICES = currentDevices.clone()
-                result << v
-            }
-            currentVips = []
-            currentDevices = []
-            mode = null
-        }
-        continue
-    }
-}
-
-// Final flush if needed
-if (currentVips && currentDevices) {
-    currentVips.each { v ->
-        v.DEVICES = currentDevices.clone()
-        result << v
-    }
-}
-
-// Add SYSID and STATUS
-result.eachWithIndex { map, idx ->
-    map.SYSID = idx + 1
-    map.STATUS = "UNPROCESSED"
-}
-
-prettyPrintList(result)
-
-
-
-def prettyPrintList(listOfMaps) {
-    println "["
-    listOfMaps.eachWithIndex { item, listIndex ->
-        println "    ["
-        def entryList = item.entrySet() as List
-        entryList.eachWithIndex { entry, entryIndex ->
-            def (key, value) = [entry.key, entry.value]
-            def isLastEntry = entryIndex == entryList.size() - 1
-
-            if (value instanceof List) {
-                println "        ${key}:["
-                value.eachWithIndex { v, i ->
-                    println "            ${v}${i < value.size() - 1 ? ',' : ''}"
-                }
-                println "        ]${!isLastEntry ? ',' : ''}"
-            } else {
-                print "        ${key}:${value}"
-                println "${!isLastEntry ? ',' : ''}"
-            }
-        }
-        println "    ]${listIndex < listOfMaps.size() - 1 ? ',' : ''}"
-    }
-    println "]"
 }
