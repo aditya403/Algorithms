@@ -287,23 +287,25 @@ bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_521
 
 
 
-// helper regexes that tolerate variable '=' counts or similar decorations
-def vipSep = { String s -> s ==~ /(?i)^[=\-\s]*VIP[=\-\s]*$/ }    // matches lines like "====VIP===="
-def devSep = { String s -> s ==~ /(?i)^[=\-\s]*DEVICES[=\-\s]*$/ } // matches lines like "==DEVICES=="
+// Regex matchers for flexible section headers
+def vipSep = { s -> s ==~ /(?i)^[=\-\s]*VIP[=\-\s]*$/ }
+def devSep = { s -> s ==~ /(?i)^[=\-\s]*DEVICES[=\-\s]*$/ }
 
-def lines = input.readLines().collect { it.trim() }.findAll { it } // trim + drop empty
+def lines = input.readLines().collect { it.trim() }.findAll { it }
 def result = []
-def currentVips = []  // temp storage for VIP entries (maps with VIP & PORT)
+def currentVips = []
 def currentDevices = []
-def mode = null // "VIP", "DEVICES", or null
+def mode = null
 
 for (int i = 0; i < lines.size(); i++) {
     String line = lines[i]
 
     if (vipSep(line)) {
-        // before switching to reading VIP, if there was a previous VIP block + devices not yet flushed, flush them
         if (currentVips && currentDevices) {
-            currentVips.each { v -> v.DEVICES = currentDevices.clone(); result << v }
+            currentVips.each { v -> 
+                v.DEVICES = currentDevices.clone()
+                result << v
+            }
             currentVips = []
             currentDevices = []
         }
@@ -317,14 +319,10 @@ for (int i = 0; i < lines.size(); i++) {
     }
 
     if (mode == "VIP") {
-        // expect "IP PORT" per line (if multiple tokens, take first token as VIP and last as PORT)
         def parts = line.split(/\s+/)
-        if (parts.length >= 2) {
-            def vip = parts[0]
-            def port = parts[-1]
-            currentVips << [VIP: vip, PORT: port]
-        } else if (parts.length == 1) {
-            // if only one token present, assume it's VIP without port (optional)
+        if (parts.size() >= 2) {
+            currentVips << [VIP: parts[0], PORT: parts[1]]
+        } else if (parts.size() == 1) {
             currentVips << [VIP: parts[0], PORT: null]
         }
         continue
@@ -332,12 +330,13 @@ for (int i = 0; i < lines.size(); i++) {
 
     if (mode == "DEVICES") {
         currentDevices << line
-        // if next line is either next VIP sep or end-of-input, we flush currentVips + currentDevices
-        boolean nextIsVipSep = (i+1 < lines.size()) && vipSep(lines[i+1])
-        boolean nextIsDevSep = (i+1 < lines.size()) && devSep(lines[i+1])
+        boolean nextIsSep = (i + 1 < lines.size()) && (vipSep(lines[i + 1]) || devSep(lines[i + 1]))
         boolean atEnd = (i == lines.size() - 1)
-        if ((nextIsVipSep || atEnd || nextIsDevSep) && currentVips) {
-            currentVips.each { v -> v.DEVICES = currentDevices.clone(); result << v }
+        if (nextIsSep || atEnd) {
+            currentVips.each { v -> 
+                v.DEVICES = currentDevices.clone()
+                result << v
+            }
             currentVips = []
             currentDevices = []
             mode = null
@@ -346,9 +345,18 @@ for (int i = 0; i < lines.size(); i++) {
     }
 }
 
-// final flush if file ended while we still had VIPs and devices
+// Final flush if needed
 if (currentVips && currentDevices) {
-    currentVips.each { v -> v.DEVICES = currentDevices.clone(); result << v }
+    currentVips.each { v ->
+        v.DEVICES = currentDevices.clone()
+        result << v
+    }
+}
+
+// Add SYSID and STATUS
+result.eachWithIndex { map, idx ->
+    map.SYSID = idx + 1
+    map.STATUS = "UNPROCESSED"
 }
 
 prettyPrintList(result)
@@ -379,4 +387,3 @@ def prettyPrintList(listOfMaps) {
     }
     println "]"
 }
-
