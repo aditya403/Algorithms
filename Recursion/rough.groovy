@@ -287,267 +287,96 @@ bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_521
 
 
 
-no object-group network PHL-ORACLE-BR-SERVERS
-no access-list Global_ACL extended permit object-group ORACLE-BR-PORTS object-group PHL-ORACLE-BR-SERVERS object-group PHL-CRL-SUBNETS log 
-no access-list Global_ACL extended permit object-group ORACLE-BR-PORTS object-group PHL-CRL-SUBNETS object-group PHL-ORACLE-BR-SERVERS log 
-object-group network ESXi_DESTINATION_PHL_CRL
-no network-object host 10.91.242.3
-no object-group network NETBACKUP-SRC
-no access-list Backup-VLAN-1055-10.91.242.0/23-IN extended permit icmp object-group NETBACKUP-SRC object 168.162.206.89-32 log 
-object-group network ESXi_DESTINATION_PHL_CRL
-no network-object host 10.91.242.4
-object-group network ESXi_DESTINATION_PHL_CRL
-no network-object host 10.91.242.5
+// helper regexes that tolerate variable '=' counts or similar decorations
+def vipSep = { String s -> s ==~ /(?i)^[=\-\s]*VIP[=\-\s]*$/ }    // matches lines like "====VIP===="
+def devSep = { String s -> s ==~ /(?i)^[=\-\s]*DEVICES[=\-\s]*$/ } // matches lines like "==DEVICES=="
 
+def lines = input.readLines().collect { it.trim() }.findAll { it } // trim + drop empty
+def result = []
+def currentVips = []  // temp storage for VIP entries (maps with VIP & PORT)
+def currentDevices = []
+def mode = null // "VIP", "DEVICES", or null
 
-no access-list Global_ACL extended permit object-group ORACLE-BR-PORTS object-group PHL-ORACLE-BR-SERVERS object-group PHL-CRL-SUBNETS log 
-no access-list Global_ACL extended permit object-group ORACLE-BR-PORTS object-group PHL-CRL-SUBNETS object-group PHL-ORACLE-BR-SERVERS log 
-no object-group network PHL-ORACLE-BR-SERVERS
-object-group network ESXi_DESTINATION_PHL_CRL
- no network-object host 10.91.242.3
-no access-list Backup-VLAN-1055-10.91.242.0/23-IN extended permit icmp object-group NETBACKUP-SRC object 168.162.206.89-32 log 
-no object-group network NETBACKUP-SRC
-object-group network ESXi_DESTINATION_PHL_CRL
- no network-object host 10.91.242.4
-object-group network ESXi_DESTINATION_PHL_CRL
- no network-object host 10.91.242.5
+for (int i = 0; i < lines.size(); i++) {
+    String line = lines[i]
 
-
-
-def reorderFirewallScript(List<String> scriptLines) {
-    // Buckets in correct install plan order
-    def aclLines = []
-    def natLines = []
-    def parentObjectGroupLines = []
-    def objectGroupLines = []
-    def parentObjectLines = []
-    def objectLines = []
-
-    def currentObjectGroupBlock = []
-
-    scriptLines.each { rawLine ->
-        def line = rawLine?.trim()
-        if (!line) return // skip blanks or nulls
-
-        switch (true) {
-            case line.startsWith("no access-list"):
-                aclLines << line
-                break
-
-            case line ==~ /.*\bnat\b.*/:
-                natLines << line
-                break
-
-            case line.startsWith("no object-group network"):
-                // Commit any open object-group block first
-                if (currentObjectGroupBlock) {
-                    objectGroupLines.addAll(currentObjectGroupBlock)
-                    currentObjectGroupBlock.clear()
-                }
-                parentObjectGroupLines << line
-                break
-
-            case line.startsWith("object-group network"):
-                // Commit previous object-group block before starting a new one
-                if (currentObjectGroupBlock) {
-                    objectGroupLines.addAll(currentObjectGroupBlock)
-                    currentObjectGroupBlock.clear()
-                }
-                currentObjectGroupBlock << line
-                break
-
-            case line.startsWith("no object network"):
-                // Commit any open object-group block before moving on
-                if (currentObjectGroupBlock) {
-                    objectGroupLines.addAll(currentObjectGroupBlock)
-                    currentObjectGroupBlock.clear()
-                }
-                parentObjectLines << line
-                break
-
-            case line.startsWith("object network"):
-                if (currentObjectGroupBlock) {
-                    objectGroupLines.addAll(currentObjectGroupBlock)
-                    currentObjectGroupBlock.clear()
-                }
-                objectLines << line
-                break
-
-            case line.startsWith("no network-object") || line.startsWith("network-object"):
-                // part of an object-group block
-                currentObjectGroupBlock << "  " + line
-                break
-
-            default:
-                // catch any stragglers or indented continuation
-                if (currentObjectGroupBlock) {
-                    currentObjectGroupBlock << line
-                }
-                break
+    if (vipSep(line)) {
+        // before switching to reading VIP, if there was a previous VIP block + devices not yet flushed, flush them
+        if (currentVips && currentDevices) {
+            currentVips.each { v -> v.DEVICES = currentDevices.clone(); result << v }
+            currentVips = []
+            currentDevices = []
         }
+        mode = "VIP"
+        continue
     }
 
-    // Commit any remaining open object-group block
-    if (currentObjectGroupBlock) {
-        objectGroupLines.addAll(currentObjectGroupBlock)
+    if (devSep(line)) {
+        mode = "DEVICES"
+        continue
     }
 
-    // Build final install plan in required order
-    def finalScript = []
-    finalScript.addAll(aclLines)
-    finalScript.addAll(natLines)
-    finalScript.addAll(parentObjectGroupLines)
-    finalScript.addAll(objectGroupLines)
-    finalScript.addAll(parentObjectLines)
-    finalScript.addAll(objectLines)
+    if (mode == "VIP") {
+        // expect "IP PORT" per line (if multiple tokens, take first token as VIP and last as PORT)
+        def parts = line.split(/\s+/)
+        if (parts.length >= 2) {
+            def vip = parts[0]
+            def port = parts[-1]
+            currentVips << [VIP: vip, PORT: port]
+        } else if (parts.length == 1) {
+            // if only one token present, assume it's VIP without port (optional)
+            currentVips << [VIP: parts[0], PORT: null]
+        }
+        continue
+    }
 
-    // Return as list
-    return finalScript.findAll { it?.trim() }
+    if (mode == "DEVICES") {
+        currentDevices << line
+        // if next line is either next VIP sep or end-of-input, we flush currentVips + currentDevices
+        boolean nextIsVipSep = (i+1 < lines.size()) && vipSep(lines[i+1])
+        boolean nextIsDevSep = (i+1 < lines.size()) && devSep(lines[i+1])
+        boolean atEnd = (i == lines.size() - 1)
+        if ((nextIsVipSep || atEnd || nextIsDevSep) && currentVips) {
+            currentVips.each { v -> v.DEVICES = currentDevices.clone(); result << v }
+            currentVips = []
+            currentDevices = []
+            mode = null
+        }
+        continue
+    }
 }
 
-
-
-
-
-
-
-
-
-
-object-group network grp_cortex_test_2
-no network-object host 10.166.86.153
-object-group network RC-Project-Group
-no network-object host 10.166.86.153
-object-group network DEV-LPAR-DPP
-no network-object host 10.166.86.153
-object-group network LPAR-DPP-DEVELOPMENT
-no network-object host 10.166.86.153
-object-group network CORTEX_SERVERS
-no network-object host 10.166.86.153
-no object network p750-Curtiz
-no object network ukbitestmvrs11
-object-group network group-p750-servers
-no network-object object p750-Curtiz
-object-group network grp_unix_servers_2
-no network-object object p750-Curtiz
-object-group network UK-DEV-SERVERS
-no network-object object p750-Curtiz
-no access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47
-no access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log
-no access-list global_access extended permit ip object p750-Curtiz object-group group_local_vmhost log
-no access-list global_access extended permit tcp object-group CTX_Complaince object p750-Curtiz object-group port-ctx-comp
-no access-list global_access extended permit tcp object p750-Curtiz object emeasvn.fnfis.com eq https
-no access-list global_access extended permit ip object-group DM_INLINE_NETWORK_80 object p750-Curtiz
-no access-list global_access extended permit tcp object p750-Curtiz object copara
-no access-list global_access extended permit tcp object copara object p750-Curtiz
-no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 object p750-Curtiz eq ssh
-no access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 33501
-no access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 11799
-object-group network group_new1102
-no network-object object ukbitestmvrs11
-no access-list global_access extended permit tcp host 10.74.145.70 host 10.166.86.153 eq 10596
-no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT-2 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-no access-list global_access extended permit tcp host 192.168.2.81 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 eq 33598
-no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 object-group port_v32
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 11799
-access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 33501
-access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 object p750-Curtiz eq ssh
-access-list global_access extended permit tcp object copara object p750-Curtiz
-access-list global_access extended permit tcp object p750-Curtiz object copara
-access-list global_access extended permit ip object-group DM_INLINE_NETWORK_80 object p750-Curtiz
-access-list global_access extended permit tcp object p750-Curtiz object emeasvn.fnfis.com eq https
-access-list global_access extended permit tcp object-group CTX_Complaince object p750-Curtiz object-group port-ctx-comp
-access-list global_access extended permit ip object p750-Curtiz object-group group_local_vmhost log
-access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log
-access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47
-access-list global_access extended permit tcp host 10.74.145.70 host 10.166.86.153 eq 10596
-access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT-2 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-access-list global_access extended permit tcp host 192.168.2.81 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 eq 33598
-access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 object-group port_v32
-
-no access-list global_access extended permit object-group DM_INLINE_SERVICE_9 object p750-Curtiz object H_10.135.128.47
-no access-list global_access extended permit ip object-group group_local_vmhost object p750-Curtiz log
-no access-list global_access extended permit ip object p750-Curtiz object-group group_local_vmhost log
-no access-list global_access extended permit tcp object-group CTX_Complaince object p750-Curtiz object-group port-ctx-comp
-no access-list global_access extended permit tcp object p750-Curtiz object emeasvn.fnfis.com eq https
-no access-list global_access extended permit ip object-group DM_INLINE_NETWORK_80 object p750-Curtiz
-no access-list global_access extended permit tcp object p750-Curtiz object copara
-no access-list global_access extended permit tcp object copara object p750-Curtiz
-no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 object p750-Curtiz eq ssh
-no access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 33501
-no access-list global_access extended permit tcp object FIS_VDI_Subnet object p750-Curtiz eq 11799
- 
-no access-list global_access extended permit tcp host 10.74.145.70 host 10.166.86.153 eq 10596
-no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT-2 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-no access-list global_access extended permit tcp host 192.168.2.81 host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-no access-list global_access extended permit tcp object-group GROUP-PRODUCT-TESTING-UAT host 10.166.86.153 object-group PORT-PRODUCT-TESTING
-no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 eq 33598
-no access-list global_access extended permit tcp 10.58.250.0 255.255.255.0 host 10.166.86.153 object-group port_v32
- 
-object-group network grp_cortex_test_2
-no network-object host 10.166.86.153
-object-group network RC-Project-Group
-no network-object host 10.166.86.153
-object-group network DEV-LPAR-DPP
-no network-object host 10.166.86.153
-object-group network LPAR-DPP-DEVELOPMENT
-no network-object host 10.166.86.153
-object-group network CORTEX_SERVERS
-no network-object host 10.166.86.153
- 
-object-group network group-p750-servers
-no network-object object p750-Curtiz
-object-group network grp_unix_servers_2
-no network-object object p750-Curtiz
-object-group network UK-DEV-SERVERS
-no network-object object p750-Curtiz
-object-group network group_new1102
-no network-object object ukbitestmvrs11
- 
-no object network p750-Curtiz
-no object network ukbitestmvrs11
-
-
-
-
-def shouldProcessLine(line, ip) {
-    // Find all "host <something>" patterns in the line
-    def matcher = (line =~ /host\s+(\S+)/)
-    
-    // If no "host" is present, return true (means IP not mentioned at all)
-    if (!matcher) {
-        return true
-    }
-
-    // Extract all host IPs from the line
-    def hostIPs = matcher.collect { it[1] }
-
-    // If the given IP is present among the host IPs, return true
-    if (hostIPs.contains(ip)) {
-        return true
-    }
-
-    // If there are host IPs but not matching the requested IP, return false
-    return false
+// final flush if file ended while we still had VIPs and devices
+if (currentVips && currentDevices) {
+    currentVips.each { v -> v.DEVICES = currentDevices.clone(); result << v }
 }
+
+prettyPrintList(result)
+
+
+
+def prettyPrintList(listOfMaps) {
+    println "["
+    listOfMaps.eachWithIndex { item, listIndex ->
+        println "    ["
+        def entryList = item.entrySet() as List
+        entryList.eachWithIndex { entry, entryIndex ->
+            def (key, value) = [entry.key, entry.value]
+            def isLastEntry = entryIndex == entryList.size() - 1
+
+            if (value instanceof List) {
+                println "        ${key}:["
+                value.eachWithIndex { v, i ->
+                    println "            ${v}${i < value.size() - 1 ? ',' : ''}"
+                }
+                println "        ]${!isLastEntry ? ',' : ''}"
+            } else {
+                print "        ${key}:${value}"
+                println "${!isLastEntry ? ',' : ''}"
+            }
+        }
+        println "    ]${listIndex < listOfMaps.size() - 1 ? ',' : ''}"
+    }
+    println "]"
+}
+
