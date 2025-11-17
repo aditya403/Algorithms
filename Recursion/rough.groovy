@@ -1,381 +1,153 @@
-=========VIP==============
-10.236.135.150 82
-=========DEVICES==========
-cdl126-cha01ma-azus
-cdl127-cha01ma-azus
-cdl126-lrd03ma-arus
-cdl127-lrd03ma-arus
-=========VIP==============
-156.55.138.96 80
-156.55.138.96 443
-=========DEVICES==========
-cdl124-cha01ma-azus
-cdl125-cha01ma-azus
-cdl124-lrd03ma-arus
-cdl125-lrd03ma-arus
-
-
-
-RITM25007516580 CH25001981435 Phase1 Decom
-
-Detailed ask of the decommission; anything associated with these VIPs and FQDN must decommissioned ASAP; please reach out to Angelo Tomaras or me or POWEB DL for any clarification.
-AMEX profile 7 client application "webclient/storefront" is decommissioned and below is the cleanup needed.
-1.	 External VIP 156.55.138.96 and any ports associated. Ex(80, 443) in LRK
-2.	FQDN and VIP mapping or reference on FIS side - personalsavings.com.    A       156.55.138.96
-3.	LRK RP – Rewrite rules and anything associated with personalsavings.com.    A       156.55.138.96
-a.	Ex:-below.
-b.	RewriteRule   "^/personalsavings/onlinebanking(.+)"  "https://personalsavings.americanexpress.com/onlinebanking$1"  [R,L]
-4.	Airgap configs – for Akamai and External VIP and ports redirects to internal VIP port 10001 and 1003 
-5. Internal Airgap VIP - 10.236.135.150 (Port 80: Storefront, Port 81: WebClient, Port 82:eDAOClient)
-
-AMEX profile 7 client application "webclient/storefront" is decommissioned and below is the cleanup needed.
-1.	 External VIP 156.55.139.228 and any ports associated. Ex(80, 443) in PDC
-2.	FQDN and VIP mapping or reference on FIS side - personalsavings.com.    A       156.55.139.228
-3.	PDC RP – Rewrite rules and anything associated with personalsavings.com.    A       156.55.139.228
-a.	Ex:-below.
-b.	RewriteRule   "^/personalsavings/onlinebanking(.+)"  "https://personalsavings.americanexpress.com/onlinebanking$1"  [R,L]
-4.	Airgap configs – for Akamai and External VIP and ports redirects to internal VIP 10001 and 1003 
-5. Internal Airgap VIP - 10.236.135.150 (Port 80: Storefront, Port 81: WebClient, Port 82:eDAOClient)
-====================
-Change Script
-====================
-cdl126-cha01ma-azus
-
-disable lb vserver AMX-eDAOClient-AG-10.236.135.150-82
-save ns config
-
-#####################
-cdl126-lrd03ma-arus
-
-disable lb vserver AMX_eDAOClient_AG-10.236.135.150-82
-disable lb vserver sorry_AMX_Storefront-AG-10.236.135.150-80 
-disable lb vserver sorry_AMX_WebClient-AG-10.236.135.150-81 
-disable lb vserver sorry_AMX_eDAOClient_AG-10.236.135.150-82 
-
-save ns config
-
-####################
-cdl125-cha01ma-azus
-
-disable lb vserver PSG-Amex-RP-156.55.138.96-443
-disable lb vserver PSG-Amex-RP-156.55.138.96-80 
-save ns config
-
-####################
-cdl124-lrd03ma-arus
-
-disable lb vserver PSG-Amex-RP-156.55.139.228-443 
-disable lb vserver PSG-Amex-RP-156.55.139.228-80  
-save ns config
-
-====================
-Post Validation
-====================
-cdl126-cha01ma-azus
-
-sho lb vserver AMX-eDAOClient-AG-10.236.135.150-82
-
-#####################
-cdl126-lrd03ma-arus
-
-sho lb vserver AMX_eDAOClient_AG-10.236.135.150-82
-sho lb vserver sorry_AMX_Storefront-AG-10.236.135.150-80 
-sho lb vserver sorry_AMX_WebClient-AG-10.236.135.150-81 
-sho lb vserver sorry_AMX_eDAOClient_AG-10.236.135.150-82 
-
-####################
-cdl125-cha01ma-azus
-
-sho lb vserver PSG-Amex-RP-156.55.138.96-443
-sho lb vserver PSG-Amex-RP-156.55.138.96-80 
-
-####################
-cdl124-lrd03ma-arus
-
-sho lb vserver PSG-Amex-RP-156.55.139.228-443 
-sho lb vserver PSG-Amex-RP-156.55.139.228-80  
-
-====================
-Backout
-====================
-cdl126-cha01ma-azus
-
-enable lb vserver AMX-eDAOClient-AG-10.236.135.150-82
-save ns config
-
-#####################
-cdl126-lrd03ma-arus
-
-enable lb vserver AMX_eDAOClient_AG-10.236.135.150-82
-enable lb vserver sorry_AMX_Storefront-AG-10.236.135.150-80 
-enable lb vserver sorry_AMX_WebClient-AG-10.236.135.150-81 
-enable lb vserver sorry_AMX_eDAOClient_AG-10.236.135.150-82 
-
-save ns config
-
-####################
-cdl124-lrd03ma-arus
-
-enable lb vserver PSG-Amex-RP-156.55.138.96-443
-enable lb vserver PSG-Amex-RP-156.55.138.96-80 
-save ns config
-
-####################
-cdl124-lrd03ma-arus
-
-enable lb vserver PSG-Amex-RP-156.55.139.228-443 
-enable lb vserver PSG-Amex-RP-156.55.139.228-80  
-save ns config
-
-
-====================
-Pre Validation
-====================
-Primary|nsroot@cdl126-cha01ma-azus-2025/10/15-07:25> sho save | grep -i 10.236.135.150
-add ns ip 10.236.135.150 255.255.255.255 -type VIP -snmp DISABLED -hostRoute ENABLED -hostRtGw 0.0.0.0
-add lb vserver AMX-eDAOClient-AG-10.236.135.150-82 HTTP 10.236.135.150 82 -persistenceType COOKIEINSERT -timeout 20 -cltTimeout 180 -comment C180025028 -RHIstate ACTIVE -devno 222822400
-bind lb vserver AMX-eDAOClient-AG-10.236.135.150-82 10.237.86.103-443
-bind lb vserver AMX-eDAOClient-AG-10.236.135.150-82 10.237.86.104-443
-
-Primary|nsroot@cdl126-cha01ma-azus-2025/10/15-07:26> sho save | grep -i 10.237.86.103-443
-add service 10.237.86.103-443 10.237.86.103 SSL 443 -gslb NONE -maxClient 0 -maxReq 0 -cip DISABLED -usip NO -useproxyport YES -sp OFF -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP NO -comment C180025028 -devno 125173760
-bind lb vserver AMX-eDAOClient-AG-10.236.135.150-82 10.237.86.103-443
-bind service 10.237.86.103-443 -monitorName https-IP-AMX-60000-APP -devno 525271040
-set ssl service 10.237.86.103-443 -ssl3 DISABLED -dtls1 DISABLED
-bind ssl service 10.237.86.103-443 -eccCurveName P_256
-bind ssl service 10.237.86.103-443 -eccCurveName P_384
-bind ssl service 10.237.86.103-443 -eccCurveName P_224
-bind ssl service 10.237.86.103-443 -eccCurveName P_521
-
-Primary|nsroot@cdl126-cha01ma-azus-2025/10/15-07:26> sho lb vserver AMX-eDAOClient-AG-10.236.135.150-82
-        AMX-eDAOClient-AG-10.236.135.150-82 (10.236.135.150:82) - HTTP  Type: ADDRESS 
-        State: DOWN
-        Last state change was at Fri Aug 29 09:01:41 2025
-        Time since last state change: 47 days, 10:26:22.230
-        Effective State: DOWN
-		
-cdl126-cha01ma-azus#sho run | grep  10.236.135.150
-ip prefix-list AMX-EID28920 seq 10 permit 10.236.135.150/32
-
-Secondary|nsroot@cdl127-cha01ma-azus-19:28> vtysh
-cdl127-cha01ma-azus#sho run | grep  10.236.135.150
-ip prefix-list AMX-EID28920 seq 10 permit 10.236.135.150/32
-
-##
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:30> sho save | grep -i 10.236.135.150
-add ns ip 10.236.135.150 255.255.255.255 -type VIP -snmp DISABLED -hostRoute ENABLED -hostRtGw 0.0.0.0
-add lb vserver sorry_AMX_Storefront-AG-10.236.135.150-80 HTTP 0.0.0.0 0 -persistenceType NONE -cltTimeout 180 -comment 1802606725 -RHIstate ACTIVE -devno 183697408
-add lb vserver sorry_AMX_WebClient-AG-10.236.135.150-81 HTTP 0.0.0.0 0 -persistenceType NONE -cltTimeout 180 -comment 1802606725 -RHIstate ACTIVE -devno 183762944
-add lb vserver sorry_AMX_eDAOClient_AG-10.236.135.150-82 HTTP 0.0.0.0 0 -persistenceType NONE -cltTimeout 180 -comment 1802606725 -RHIstate ACTIVE -devno 183861248
-add lb vserver AMX_eDAOClient_AG-10.236.135.150-82 HTTP 10.236.135.150 82 -persistenceType COOKIEINSERT -timeout 20 -cltTimeout 180 -comment 1802606725 -RHIstate ACTIVE -devno 183894016
-bind lb vserver sorry_AMX_Storefront-AG-10.236.135.150-80 10.237.86.47-50000
-bind lb vserver sorry_AMX_WebClient-AG-10.236.135.150-81 10.237.86.47-50001
-bind lb vserver sorry_AMX_eDAOClient_AG-10.236.135.150-82 10.237.86.47-50002
-bind lb vserver AMX_eDAOClient_AG-10.236.135.150-82 10.237.84.131-443
-bind lb vserver AMX_eDAOClient_AG-10.236.135.150-82 10.237.84.132-443
-
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:30> sho save | grep -i 10.237.86.47-50000
-add service 10.237.86.47-50000 10.237.86.47 SSL 50000 -gslb NONE -maxClient 0 -maxReq 0 -cip ENABLED X-Forwarded-For -usip NO -useproxyport YES -sp OFF -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP YES -comment 1802606725 -devno 124813312
-bind lb vserver sorry_AMX_Storefront-AG-10.236.135.150-80 10.237.86.47-50000
-set ssl service 10.237.86.47-50000 -ssl3 DISABLED -dtls1 DISABLED
-bind ssl service 10.237.86.47-50000 -eccCurveName P_256
-bind ssl service 10.237.86.47-50000 -eccCurveName P_384
-bind ssl service 10.237.86.47-50000 -eccCurveName P_224
-bind ssl service 10.237.86.47-50000 -eccCurveName P_521
-
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:31> sho save | grep -i 10.237.86.47-50001
-add service 10.237.86.47-50001 10.237.86.47 SSL 50001 -gslb NONE -maxClient 0 -maxReq 0 -cip ENABLED X-Forwarded-For -usip NO -useproxyport YES -sp OFF -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP YES -comment 1802606725 -devno 124911616
-bind lb vserver sorry_AMX_WebClient-AG-10.236.135.150-81 10.237.86.47-50001
-set ssl service 10.237.86.47-50001 -ssl3 DISABLED -dtls1 DISABLED
-bind ssl service 10.237.86.47-50001 -eccCurveName P_256
-bind ssl service 10.237.86.47-50001 -eccCurveName P_384
-bind ssl service 10.237.86.47-50001 -eccCurveName P_224
-bind ssl service 10.237.86.47-50001 -eccCurveName P_521
-
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:31> sho save | grep -i 10.237.86.47-50002
-add service 10.237.86.47-50002 10.237.86.47 SSL 50002 -gslb NONE -maxClient 0 -maxReq 0 -cip ENABLED X-Forwarded-For -usip NO -useproxyport YES -sp OFF -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP YES -comment 1802606725 -devno 125009920
-bind lb vserver sorry_AMX_eDAOClient_AG-10.236.135.150-82 10.237.86.47-50002
-set ssl service 10.237.86.47-50002 -ssl3 DISABLED -dtls1 DISABLED
-bind ssl service 10.237.86.47-50002 -eccCurveName P_256
-bind ssl service 10.237.86.47-50002 -eccCurveName P_384
-bind ssl service 10.237.86.47-50002 -eccCurveName P_224
-bind ssl service 10.237.86.47-50002 -eccCurveName P_521
-
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:31> sho save | grep -i 10.237.84.131-443
-add service 10.237.84.131-443 10.237.84.131 SSL 443 -gslb NONE -maxClient 0 -maxReq 0 -cip DISABLED -usip NO -useproxyport YES -sp OFF -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP NO -comment 1802606725 -devno 124944384
-bind lb vserver AMX_eDAOClient_AG-10.236.135.150-82 10.237.84.131-443
-bind service 10.237.84.131-443 -monitorName AMX_eDAOClient_AG -devno 345899008
-set ssl service 10.237.84.131-443 -ssl3 DISABLED -dtls1 DISABLED
-bind ssl service 10.237.84.131-443 -eccCurveName P_256
-bind ssl service 10.237.84.131-443 -eccCurveName P_384
-bind ssl service 10.237.84.131-443 -eccCurveName P_224
-bind ssl service 10.237.84.131-443 -eccCurveName P_521
-
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:31> sho save | grep -i 10.237.84.132-443
-add service 10.237.84.132-443 10.237.84.132 SSL 443 -gslb NONE -maxClient 0 -maxReq 0 -cip DISABLED -usip NO -useproxyport YES -sp OFF -cltTimeout 180 -svrTimeout 360 -CKA NO -TCPB NO -CMP NO -comment 1802606725 -devno 124977152
-bind lb vserver AMX_eDAOClient_AG-10.236.135.150-82 10.237.84.132-443
-bind service 10.237.84.132-443 -monitorName AMX_eDAOClient_AG -devno 345866240
-set ssl service 10.237.84.132-443 -ssl3 DISABLED -dtls1 DISABLED
-bind ssl service 10.237.84.132-443 -eccCurveName P_256
-bind ssl service 10.237.84.132-443 -eccCurveName P_384
-bind ssl service 10.237.84.132-443 -eccCurveName P_224
-bind ssl service 10.237.84.132-443 -eccCurveName P_521
-
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:31> sho lb vserver AMX_eDAOClient_AG-10.236.135.150-82
-        AMX_eDAOClient_AG-10.236.135.150-82 (10.236.135.150:82) - HTTP  Type: ADDRESS 
-        State: DOWN
-        Last state change was at Thu Aug 28 10:18:06 2025
-        Time since last state change: 48 days, 09:14:31.880
-        Effective State: DOWN
-		
-Primary|nsroot@cdl126-lrd03ma-arus-2025/10/15-07:33> vtysh
-cdl126-lrd03ma-arus#sho run | grep  10.236.135.150
-ip prefix-list AMX-EID28920 seq 10 permit 10.236.135.150/32
-
-Secondary|nsroot@cdl127-lrd03ma-arus-19:35> vtysh
-cdl127-lrd03ma-arus#sho run | grep  10.236.135.150
-ip prefix-list AMX-EID28920 seq 10 permit 10.236.135.150/32		
-
-####
-Secondary@cdl124-lrd03ma-arus-2025/10/15-07:37> sho save | grep -i 156.55.138.96
-add ns ip 156.55.138.96 255.255.255.255 -type VIP -snmp DISABLED -hostRoute ENABLED -hostRtGw 0.0.0.0
-add lb vserver PSG-Amex-RP-156.55.138.96-443 SSL 156.55.138.96 443 -persistenceType SOURCEIP -timeout 30 -cltTimeout 1800 -comment 1802606725 -devno 58458112
-add lb vserver PSG-Amex-RP-156.55.138.96-80 HTTP 156.55.138.96 80 -persistenceType SOURCEIP -timeout 30 -cltTimeout 1800 -comment 1802606725 -devno 58490880
-bind lb vserver PSG-Amex-RP-156.55.138.96-443 10.236.132.27-10001
-bind lb vserver PSG-Amex-RP-156.55.138.96-443 10.236.132.28-10001
-bind lb vserver PSG-Amex-RP-156.55.138.96-80 10.236.132.27-80
-bind lb vserver PSG-Amex-RP-156.55.138.96-80 10.236.132.28-80
-set ssl vserver PSG-Amex-RP-156.55.138.96-443 -ssl3 DISABLED -tls1 DISABLED -tls11 DISABLED -dtls1 DISABLED
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -cipherName FIS-2017
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -cipherName DEFAULT
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -certkeyName personalsavings.americanexpress
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -eccCurveName P_256
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -eccCurveName P_384
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -eccCurveName P_224
-bind ssl vserver PSG-Amex-RP-156.55.138.96-443 -eccCurveName P_521
-
-##
-Primary@cdl124-cha01ma-azus-2025/10/15-07:38> sho save | grep -i 156.55.139.228
-add ns ip 156.55.139.228 255.255.255.255 -type VIP -snmp DISABLED -hostRoute ENABLED -hostRtGw 0.0.0.0
-add lb vserver PSG-Amex-RP-156.55.139.228-443 SSL 156.55.139.228 443 -persistenceType SOURCEIP -timeout 30 -cltTimeout 1800 -comment C170111999 -devno 53411840
-add lb vserver PSG-Amex-RP-156.55.139.228-80 HTTP 156.55.139.228 80 -persistenceType SOURCEIP -timeout 30 -cltTimeout 1800 -comment C170111999 -devno 53444608
-bind lb vserver PSG-Amex-RP-156.55.139.228-443 10.236.137.22-10001
-bind lb vserver PSG-Amex-RP-156.55.139.228-443 10.236.137.23-10001
-bind lb vserver PSG-Amex-RP-156.55.139.228-80 10.236.137.22-80
-bind lb vserver PSG-Amex-RP-156.55.139.228-80 10.236.137.23-80
-set ssl vserver PSG-Amex-RP-156.55.139.228-443 -ssl3 DISABLED -tls1 DISABLED -tls11 DISABLED -dtls1 DISABLED
-bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -cipherName FIS-2017
-bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -certkeyName personalsavings.amx
-bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_256
-bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_384
-bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_224
-bind ssl vserver PSG-Amex-RP-156.55.139.228-443 -eccCurveName P_521
-
-
-
-
-
-
-Successfully executed runbook. Please check your email or status dashboard.
-
-
-Runbook execution failed. Please try again or contact support.
-
-
-
-
-
-
-
-
-// Flexible header matchers
-def vipMarker = ~/^[=\-\s]*VIP[=\-\s]*$/
-def devMarker = ~/^[=\-\s]*DEVICES[=\-\s]*$/
-
-def lines = input.readLines().collect { it.trim() }
-
-// Function to extract all sections by header type (VIP or DEVICES)
-def extractSections = { regex ->
-    def sections = []
-    def inside = false
-    def current = []
-
-    lines.each { line ->
-        if (line ==~ regex) {
-            if (inside) {
-                // end of section
-                if (current) sections << current.clone()
-                current.clear()
-                inside = false
-            } else {
-                // start of section
-                inside = true
-            }
-        } else if (inside) {
-            // capture line inside section
-            if (line && !(line ==~ regex)) current << line
-        }
+////////////
+// VIP Decommission Automation Front Page (ExtJS)
+////////////
+
+document.body.innerHTML = "";
+
+Ext.onReady(function() {
+
+    var uploadedFileContent = '';
+
+    var topLeft = Ext.create('Ext.panel.Panel', {
+        border: false,
+        bodyPadding: 10,
+        html: [
+            '<div style="text-align: center; margin-bottom: 10px">',
+            '<p style="font-family: Helvetica; font-size: 20px; font-weight: bold; margin: 0;">',
+            'VIP Decommission Automation',
+            '</p>',
+            '<p style="font-family: Helvetica; font-size: 14px; margin: 5px 0;">RITM Reference: RITM344632124543</p>',
+            '<ul style="font-family: Helvetica; font-size: 12px; text-align: left; margin: 10px auto 0 auto; max-width: 600px;">',
+            '<li>Fill out all fields and upload the Phase 1 script (.txt)</li>',
+            '<li><a href="mailto:adityakumar.mishra@fisglobal.com?cc=Gil.Mendelaoui@fisglobal.com&subject=Question%20regarding%20LB%20VIP%20Decom">Contact us</a> with questions.</li>',
+            '</ul>',
+            '</div>'
+        ].join(' ')
+    });
+
+    function createTextField(id, label) {
+        return Ext.create('Ext.form.field.Text', {
+            id: id,
+            fieldLabel: label,
+            labelWidth: 180,
+            width: 500,
+            labelStyle: 'font-family: Helvetica; font-size: 13px;',
+            margin: '10 0 8 0'
+        });
     }
-    return sections
-}
 
-// Extract VIP and DEVICE sections independently
-def vipSections = extractSections(vipMarker)
-def deviceSections = extractSections(devMarker)
+    var emailField = createTextField('userEmail', 'Your Email');
+    var ritmField = createTextField('ritmNumber', 'RITM Number');
 
-// Prepare result list
-def result = []
-def sysid = 1
+    var phase1FileInput = Ext.create('Ext.form.field.File', {
+        id: 'phase1Script',
+        fieldLabel: 'Phase 1 Script (.txt)',
+        labelWidth: 180,
+        width: 500,
+        labelStyle: 'font-family: Helvetica; font-size: 13px;',
+        margin: '10 0 8 0',
+        buttonText: 'Browse...'
+    });
 
-// Pair VIP section i with DEVICE section i
-for (int i = 0; i < Math.min(vipSections.size(), deviceSections.size()); i++) {
-    def vips = vipSections[i]
-    def devices = deviceSections[i]
-    vips.each { line ->
-        def parts = line.split(/\s+/)
-        if (parts.size() >= 2) {
-            result << [
-                SYSID: sysid++,
-                VIP: parts[0],
-                PORT: parts[1],
-                DEVICES: devices.clone(),
-                STATUS: "UNPROCESSED"
-            ]
-        } else if (parts.size() == 1) {
-            result << [
-                SYSID: sysid++,
-                VIP: parts[0],
-                PORT: null,
-                DEVICES: devices.clone(),
-                STATUS: "UNPROCESSED"
-            ]
+    var deleteFileBtn = Ext.create('Ext.Button', {
+        text: 'Remove File',
+        hidden: true,
+        margin: '0 0 10 0',
+        handler: function() {
+            uploadedFileContent = '';
+            fileContentDisplay.setValue('');
+            phase1FileInput.reset();
+            deleteFileBtn.hide();
         }
-    }
-}
+    });
 
+    var fileContentDisplay = Ext.create('Ext.form.field.TextArea', {
+        id: 'fileDisplay',
+        fieldLabel: 'Script Preview',
+        labelAlign: 'top',
+        width: 500,
+        height: 440,
+        readOnly: true,
+        scrollable: true,
+        style: 'font-family: Courier New; font-size: 12px;',
+        margin: '10',
+        autoScroll: true
+    });
 
+    phase1FileInput.on('change', function(fileInput, value, eOpts) {
+        var file = fileInput.fileInputEl.dom.files[0];
+        if (file && file.name.endsWith('.txt')) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                uploadedFileContent = e.target.result;
+                fileContentDisplay.setValue(uploadedFileContent);
+                deleteFileBtn.show();
+            };
+            reader.readAsText(file);
+        } else {
+            uploadedFileContent = '';
+            fileContentDisplay.setValue('Only .txt files are supported.');
+            deleteFileBtn.hide();
+        }
+    });
 
+    var runAutomationBtn = Ext.create('Ext.Button', {
+        text: 'Run Automation',
+        width: 180,
+        style: 'background-color: #4caf50; color:white; border: none; font-weight: bold;',
+        margin: '10 0 10 0',
+        handler: function() {
+            var dataPayload = {
+                PHASE1_SCRIPT: uploadedFileContent,
+                EMAIL: emailField.getValue(),
+                RITM: ritmField.getValue(),
+                VERBOSE: true,
+                AJAXCALL: true,
+                WSDATA_FLAG: true
+            };
 
+            Ext.Ajax.request({
+                url: '/resolve/service/runbook/execute',
+                timeout: 1800000,
+                params: Object.assign({
+                    WIKI: 'CIO_NORA_NETWORK.LB_VIP_DECOM_PRE_REVIEW',
+                    USERID: '$wikiUser.getUsername()',
+                    PROBLEMID: 'NEW'
+                }, dataPayload),
+                success: function(response, opts) {
+                    Ext.Msg.alert('Success', 'Successfully executed runbook. Please check your email or status dashboard.');
+                }
+            });
+        }
+    });
 
+    var leftPanel = Ext.create('Ext.panel.Panel', {
+        width: 550,
+        layout: 'vbox',
+        padding: 20,
+        items: [
+            emailField,
+            ritmField,
+            phase1FileInput,
+            deleteFileBtn,
+            runAutomationBtn
+        ]
+    });
 
+    var mainPanel = Ext.create('Ext.panel.Panel', {
+        layout: 'hbox',
+        scrollable: true,
+        bodyPadding: 10,
+        items: [leftPanel, fileContentDisplay]
+    });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-GRID_ARRAYL: [[SYSID:1, VIP:10.236.135.150, PORT:82, DEVICES:[cdl126-cha01ma-azus, cdl127-cha01ma-azus, cdl126-lrd03ma-arus, cdl127-lrd03ma-arus], STATUS:EXECUTED, PRIMARY_DEVICES:[cdl126-cha01ma-azus, cdl126-lrd03ma-arus], SECONDARY_DEVICES:[cdl127-cha01ma-azus, cdl127-lrd03ma-arus]], [SYSID:2, VIP:156.55.138.96, PORT:80, DEVICES:[cdl124-cha01ma-azus, cdl125-cha01ma-azus, cdl124-lrd03ma-arus, cdl125-lrd03ma-arus], STATUS:EXECUTED, PRIMARY_DEVICES:[cdl124-cha01ma-azus, cdl125-lrd03ma-arus], SECONDARY_DEVICES:[cdl125-cha01ma-azus, cdl124-lrd03ma-arus]], [SYSID:3, VIP:156.55.138.96, PORT:443, DEVICES:[cdl124-cha01ma-azus, cdl125-cha01ma-azus, cdl124-lrd03ma-arus, cdl125-lrd03ma-arus], STATUS:EXECUTED, PRIMARY_DEVICES:[cdl124-cha01ma-azus, cdl125-lrd03ma-arus], SECONDARY_DEVICES:[cdl125-cha01ma-azus, cdl124-lrd03ma-arus]]]
-
+    Ext.create('Ext.container.Viewport', {
+        layout: {
+            type: 'vbox',
+            align: 'center',
+            pack: 'start'
+        },
+        scrollable: true,
+        items: [topLeft, mainPanel]
+    });
+});
